@@ -5,6 +5,7 @@ use crate::error::{Error, Result};
 use crate::platform::SystemDisplayPlatform;
 
 pub enum Command {
+    LaunchTray,
     Inspect(CliTweakOptions),
     Apply(CliTweakOptions),
     Reset(CliTweakOptions),
@@ -58,6 +59,10 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
     let platform = SystemDisplayPlatform::new();
 
     match command {
+        Command::LaunchTray => {
+            crate::tray::launch(None)?;
+            println!("Started color-lut-tweaks tray");
+        }
         Command::Inspect(options) => {
             let tweaks = options.resolve()?;
             let path = require_lut(&tweaks, "inspect")?;
@@ -109,8 +114,7 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             app::start_tweaks(&platform, &tweaks)?;
         }
         Command::Tray(options) => {
-            crate::tray::launch(options.config)?;
-            println!("Started color-lut-tweaks tray");
+            crate::tray::run(options.config)?;
         }
         Command::TrayWorker(options) => {
             crate::tray::run(options.config)?;
@@ -122,9 +126,7 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
 
 pub fn parse_command(args: &[String]) -> Result<Command> {
     match args {
-        [] => Err(Error::InvalidArguments(
-            "missing command or LUT path".to_string(),
-        )),
+        [] => Ok(Command::LaunchTray),
         [flag] if flag == "-h" || flag == "--help" => {
             print_usage();
             std::process::exit(0);
@@ -168,6 +170,7 @@ pub fn print_usage() {
     );
     eprintln!("  color-lut-tweaks start [--config <identity-config.json>]");
     eprintln!("  color-lut-tweaks tray [--config <identity-config.json>]");
+    eprintln!("  color-lut-tweaks");
 }
 
 fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
@@ -368,6 +371,6 @@ fn require_lut<'a>(tweaks: &'a TweakOptions, command: &str) -> Result<&'a PathBu
 }
 
 fn expected_usage() -> String {
-    "expected root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, `reset [--device <index>]`, `start [--config <path>]`, or `tray [--config <path>]`"
+    "expected no args to launch the tray, root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, `reset [--device <index>]`, `start [--config <path>]`, or `tray [--config <path>]`"
         .to_string()
 }

@@ -59,9 +59,23 @@ create this tool). Example:
 OBS: If you do not specify file extension or a path like string, the tool will look for the LUTs in the `luts/` folder.
 
 ## Running
-After having your project build and configuration in place, to run it, simply execute the executable. Example:
+After having your project build and configuration in place, run the executable with no args to launch the tray app in
+the background and immediately return the shell:
+
 ```shell
 color-lut-tweaks.exe
+```
+
+Run the tray app attached to the current terminal when you want foreground/debug behavior:
+
+```shell
+color-lut-tweaks.exe tray --config=.\config.json
+```
+
+Run the coordinated watcher without the tray UI:
+
+```shell
+color-lut-tweaks.exe start --config=.\config.json
 ```
 
 ---

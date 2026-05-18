@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
+use color_lut_tweaks::Result;
 use color_lut_tweaks::app::{self, ColorMode, TweakOptions};
 use color_lut_tweaks::lut::GammaRamp;
+use color_lut_tweaks::platform::DisplayPlatform;
 
 #[test]
 fn start_config_loads_tweak_options_list() {
@@ -22,6 +24,13 @@ fn start_config_loads_tweak_options_list() {
             },
         ]
     );
+}
+
+#[test]
+fn empty_tweak_list_is_valid() {
+    let platform = EmptyDisplayPlatform;
+
+    app::run_tweaks_until(&platform, &[], || true).unwrap();
 }
 
 #[test]
@@ -59,7 +68,7 @@ fn named_lut_resolves_to_luts_folder_next_to_exe() {
 
     assert_eq!(
         path.file_name().unwrap(),
-        "xiaomi-g-pro-27i-hdr-eotf-correction.lut"
+        "xiaomi-27i-pro-hdr-eotf-correction.lut"
     );
     assert_eq!(path.parent().unwrap().file_name().unwrap(), "luts");
 }
@@ -104,4 +113,24 @@ fn single_tweak_config_does_not_parse_as_start_config() {
         .expect_err("start config should be a JSON array");
 
     assert!(error.to_string().contains("failed to parse config"));
+}
+
+struct EmptyDisplayPlatform;
+
+impl DisplayPlatform for EmptyDisplayPlatform {
+    fn active_device_count(&self) -> Result<usize> {
+        unreachable!("empty tweak list does not enumerate devices")
+    }
+
+    fn hdr_enabled(&self, _device_index: usize) -> Result<bool> {
+        unreachable!("empty tweak list does not read HDR state")
+    }
+
+    fn capture_gamma_ramp(&self, _device_index: usize) -> Result<GammaRamp> {
+        unreachable!("empty tweak list does not capture gamma")
+    }
+
+    fn apply_gamma_ramp(&self, _device_index: usize, _ramp: &GammaRamp) -> Result<()> {
+        unreachable!("empty tweak list does not apply gamma")
+    }
 }

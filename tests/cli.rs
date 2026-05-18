@@ -14,6 +14,16 @@ fn reset_parses_as_command_not_path() {
 }
 
 #[test]
+fn no_args_parse_as_default_tray_launcher() {
+    let args = Vec::new();
+
+    assert!(matches!(
+        cli::parse_command(&args),
+        Ok(CliCommand::LaunchTray)
+    ));
+}
+
+#[test]
 fn lut_path_parses_as_optional_lut_argument() {
     let args = vec![
         "apply".to_string(),
@@ -468,7 +478,7 @@ fn bare_lut_path_is_not_accepted() {
     assert!(!output.status.success());
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("expected root options"));
+    assert!(stderr.contains("expected no args to launch the tray"));
 }
 
 #[test]

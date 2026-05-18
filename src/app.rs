@@ -186,9 +186,12 @@ pub fn run_tweaks_until(
 ) -> Result<()> {
     let rules = start_rules(platform, tweaks)?;
     if rules.is_empty() {
-        return Err(Error::InvalidArguments(
-            "`start` config needs at least one tweak entry".to_string(),
-        ));
+        loop {
+            if should_stop() {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
     }
 
     let mut runtime = TweakRuntime {
