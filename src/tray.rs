@@ -15,7 +15,7 @@ mod windows_tray {
     use crate::error::{Error, Result};
     use crate::platform::SystemDisplayPlatform;
 
-    const APP_NAME: &str = "color-lut-tweaks";
+    const APP_NAME: &str = "Color LUT Tweaks";
     const WM_APP: u32 = 0x8000;
     const WM_TRAY_ICON: u32 = WM_APP + 1;
     const WM_WORKER_DONE: u32 = WM_APP + 2;
@@ -41,7 +41,10 @@ mod windows_tray {
 
     const MB_ICONERROR: u32 = 0x00000010;
     const MB_ICONINFORMATION: u32 = 0x00000040;
+    const IMAGE_ICON: u32 = 1;
     const IDI_APPLICATION: usize = 32512;
+    const LR_LOADFROMFILE: u32 = 0x00000010;
+    const LR_DEFAULTSIZE: u32 = 0x00000040;
 
     const TRAY_UID: u32 = 1;
     const MENU_RESET: usize = 1001;
@@ -321,7 +324,7 @@ mod windows_tray {
             uid: TRAY_UID,
             uflags: NIF_MESSAGE | NIF_ICON | NIF_TIP,
             ucallback_message: WM_TRAY_ICON,
-            hicon: unsafe { LoadIconW(ptr::null_mut(), IDI_APPLICATION as *const u16) },
+            hicon: unsafe { load_tray_icon() },
             ..NotifyIconDataW::default()
         };
         copy_wide(&mut data.sztip, APP_NAME);
@@ -331,6 +334,32 @@ mod windows_tray {
         }
 
         Ok(())
+    }
+
+    unsafe fn load_tray_icon() -> Hicon {
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(parent) = exe.parent()
+        {
+            let icon_path = parent.join("icon.ico");
+            if icon_path.is_file() {
+                let icon_path = wide(icon_path.to_string_lossy());
+                let icon = unsafe {
+                    LoadImageW(
+                        ptr::null_mut(),
+                        icon_path.as_ptr(),
+                        IMAGE_ICON,
+                        0,
+                        0,
+                        LR_LOADFROMFILE | LR_DEFAULTSIZE,
+                    )
+                };
+                if !icon.is_null() {
+                    return icon;
+                }
+            }
+        }
+
+        unsafe { LoadIconW(ptr::null_mut(), IDI_APPLICATION as *const u16) }
     }
 
     unsafe fn remove_tray_icon(hwnd: Hwnd) {
@@ -525,6 +554,14 @@ mod windows_tray {
         fn GetCursorPos(point: *mut Point) -> i32;
         fn SetForegroundWindow(hwnd: Hwnd) -> i32;
         fn LoadIconW(instance: Hinstance, icon_name: *const u16) -> Hicon;
+        fn LoadImageW(
+            instance: Hinstance,
+            name: *const u16,
+            image_type: u32,
+            desired_width: i32,
+            desired_height: i32,
+            load: u32,
+        ) -> Hicon;
     }
 
     #[link(name = "kernel32")]
