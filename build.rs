@@ -13,6 +13,7 @@ fn main() {
 
     let destination_dir = profile_target_dir().join("luts");
     fs::create_dir_all(&destination_dir).expect("create target luts directory");
+    create_default_config(&destination_dir);
 
     for entry in fs::read_dir(&source_dir).expect("read luts directory") {
         let entry = entry.expect("read luts entry");
@@ -25,6 +26,18 @@ fn main() {
         let destination = destination_dir.join(path.file_name().expect("lut file name"));
         fs::copy(&path, &destination).expect("copy LUT into target profile directory");
     }
+}
+
+fn create_default_config(luts_destination_dir: &Path) {
+    let profile_dir = luts_destination_dir
+        .parent()
+        .expect("luts destination should have a profile parent directory");
+    let config_path = profile_dir.join("config.json");
+    if config_path.exists() {
+        return;
+    }
+
+    fs::write(config_path, "[]\n").expect("write default config.json");
 }
 
 fn profile_target_dir() -> PathBuf {

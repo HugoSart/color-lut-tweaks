@@ -11,6 +11,7 @@ pub enum Command {
     Watch(CliTweakOptions),
     Start(StartOptions),
     Tray(StartOptions),
+    TrayWorker(StartOptions),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -108,6 +109,10 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             app::start_tweaks(&platform, &tweaks)?;
         }
         Command::Tray(options) => {
+            crate::tray::launch(options.config)?;
+            println!("Started color-lut-tweaks tray");
+        }
+        Command::TrayWorker(options) => {
             crate::tray::run(options.config)?;
         }
     }
@@ -134,6 +139,9 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
         [command, rest @ ..] if command == "tray" => {
             Ok(Command::Tray(parse_start_options("tray", rest)?))
         }
+        [command, rest @ ..] if command == "tray-worker" => Ok(Command::TrayWorker(
+            parse_start_options("tray-worker", rest)?,
+        )),
         [first, ..] if first.starts_with('-') => Ok(Command::Watch(parse_options(args)?)),
         _ => Err(Error::InvalidArguments(expected_usage())),
     }

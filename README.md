@@ -12,87 +12,63 @@ Download the latest [release](https://github.com/HugoSart/color-lut-tweaks/relea
 cargo build --release
 ```
 
-## Running
+This will build the project in `target/release`, where it's ready to be executed. Important files:
+- `luts/`: optional pre-built LUTs folder; it's recommended to copy this folder to the same folder as the 
+           executable if you decide to move the executable somewhere else.
+- `config.json`: edit this file to configure how you want to load the LUTs in your system;
+- `color-lut-tweaks.exe`: the main executable;
 
-Run the coordinated foreground watcher:
+## Configuration
 
-```powershell
-.\target\release\color-lut-tweaks.exe start --config=.\config.json
-```
+The configuration file is a JSON array of LUTs to load.
 
-Run as a background tray app:
-
-```powershell
-.\target\release\color-lut-tweaks.exe tray --config=.\config.json
-```
-
-If `--config` is omitted, `start` and `tray` look for `config.json` in the same folder as the executable. The tray app keeps a Windows notification-area icon alive, runs the same coordinated LUT runtime in the background, and restores the captured gamma ramps when you choose `Quit`.
-
-Tray menu:
-
-- `Reset gamma`: resets all active displays to the identity gamma ramp.
-- `Quit`: stops the background runtime and restores the gamma ramps captured on startup.
-
-Example config:
-
+The following example shows a configuration that loads the identity LUT when you are in SDR (i.e. no color correction)
+and a custom LUT when you are in HDR:
 ```json
 [
-  {
-    "device": 0,
-    "mode": "hdr",
-    "lut": "hdr.lut"
-  },
-  {
-    "device": 0,
-    "mode": "sdr",
-    "lut": "sdr.lut"
-  }
-]
-```
-
-Use the reserved LUT value `identity` when you want a normal tweak entry to apply the generated identity ramp instead of loading a `.lut` file:
-
-```powershell
-.\target\release\color-lut-tweaks.exe apply --device 0 --lut identity
-```
-
-You can also pass a plain LUT name with no extension or path separators. Plain names resolve to the `luts` folder beside the running executable:
-
-```powershell
-.\target\release\color-lut-tweaks.exe apply --device 0 --lut xiaomi-27i-pro-hdr-eotf-correction
-```
-
-This resolves to:
-
-```text
-target\release\luts\xiaomi-27i-pro-hdr-eotf-correction.lut
-```
-
-When using `cargo run`, Cargo runs `target\debug\color-lut-tweaks.exe`, so plain names resolve under:
-
-```text
-target\debug\luts\
-```
-
-It also works in config files:
-
-```json
-[
-  {
-    "device": 0,
-    "mode": "hdr",
-    "lut": "xiaomi-27i-pro-hdr-eotf-correction"
-  },
   {
     "device": 0,
     "mode": "sdr",
     "lut": "identity"
+  },
+  {
+    "device": 0,
+    "mode": "hdr",
+    "lut": "./path-to-my-lut.lut"
   }
 ]
 ```
 
+This project also includes a default Xiaomi G Pro 27i HDR EOTF curve correction (because this is what motivated me to 
+create this tool). Example:
+```json
+[
+  {
+    "device": 0,
+    "mode": "sdr",
+    "lut": "identity"
+  },
+  {
+    "device": 0,
+    "mode": "hdr",
+    "lut": "xiaomi-g-pro-27i-hdr-eotf-correction"
+  }
+]
+```
+
+OBS: If you do not specify file extension or a path like string, the tool will look for the LUTs in the `luts/` folder.
+
+## Running
+After having your project build and configuration in place, to run it, simply execute the executable. Example:
+```shell
+color-lut-tweaks.exe
+```
+
 ---
 ## LUT Format
+
+**LUT** stands for "Look Up Table", and in this context it refers to a set of gamma ramps that can be applied to a color
+space.
 
 `.lut` files are expected to be raw Windows gamma ramps:
 

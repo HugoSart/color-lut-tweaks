@@ -3,7 +3,9 @@ mod windows_tray {
     use std::ffi::{OsStr, c_void};
     use std::mem::size_of;
     use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::process::CommandExt;
     use std::path::PathBuf;
+    use std::process::{Command, Stdio};
     use std::ptr;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, mpsc};
@@ -22,6 +24,8 @@ mod windows_tray {
     const WM_LBUTTONUP: u32 = 0x0202;
     const WM_CONTEXTMENU: u32 = 0x007B;
     const GWLP_USERDATA: i32 = -21;
+    const DETACHED_PROCESS: u32 = 0x00000008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
 
     const NIM_ADD: u32 = 0x00000000;
     const NIM_DELETE: u32 = 0x00000002;
@@ -42,6 +46,26 @@ mod windows_tray {
     const TRAY_UID: u32 = 1;
     const MENU_RESET: usize = 1001;
     const MENU_QUIT: usize = 1002;
+
+    pub fn launch(config: Option<PathBuf>) -> Result<()> {
+        let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
+        let mut command = Command::new(exe);
+        command.arg("tray-worker");
+
+        if let Some(config) = config {
+            command.arg("--config").arg(config);
+        }
+
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+            .spawn()
+            .map_err(|source| Error::Io { path: None, source })?;
+
+        Ok(())
+    }
 
     pub fn run(config: Option<PathBuf>) -> Result<()> {
         let config = config.unwrap_or(app::default_config_path()?);
@@ -515,7 +539,17 @@ mod windows_tray {
 }
 
 #[cfg(windows)]
+pub use windows_tray::launch;
+
+#[cfg(windows)]
 pub use windows_tray::run;
+
+#[cfg(not(windows))]
+pub fn launch(_config: Option<std::path::PathBuf>) -> crate::Result<()> {
+    Err(crate::Error::platform(
+        "system tray mode is only supported on Windows",
+    ))
+}
 
 #[cfg(not(windows))]
 pub fn run(_config: Option<std::path::PathBuf>) -> crate::Result<()> {

@@ -190,6 +190,26 @@ fn tray_parses_config_argument() {
 }
 
 #[test]
+fn tray_worker_parses_config_argument() {
+    let args = vec![
+        "tray-worker".to_string(),
+        "--config=tests/fixtures/start-config.json".to_string(),
+    ];
+
+    let Ok(CliCommand::TrayWorker(StartOptions {
+        config: Some(config),
+    })) = cli::parse_command(&args)
+    else {
+        panic!("expected tray worker command with config path");
+    };
+
+    assert_eq!(
+        config,
+        std::path::PathBuf::from("tests/fixtures/start-config.json")
+    );
+}
+
+#[test]
 fn identity_lut_parses_as_reserved_lut_value() {
     let args = vec![
         "apply".to_string(),

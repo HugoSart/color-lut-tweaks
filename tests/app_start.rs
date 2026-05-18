@@ -59,7 +59,7 @@ fn named_lut_resolves_to_luts_folder_next_to_exe() {
 
     assert_eq!(
         path.file_name().unwrap(),
-        "xiaomi-27i-pro-hdr-eotf-correction.lut"
+        "xiaomi-g-pro-27i-hdr-eotf-correction.lut"
     );
     assert_eq!(path.parent().unwrap().file_name().unwrap(), "luts");
 }
