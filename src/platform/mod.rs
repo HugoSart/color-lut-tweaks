@@ -11,9 +11,9 @@ pub use windows::WindowsDisplayPlatform as SystemDisplayPlatform;
 pub use unsupported::UnsupportedDisplayPlatform as SystemDisplayPlatform;
 
 pub trait DisplayPlatform {
-    fn hdr_enabled(&self) -> Result<bool>;
-    fn capture_gamma_ramp(&self) -> Result<GammaRamp>;
-    fn apply_gamma_ramp(&self, ramp: &GammaRamp) -> Result<()>;
+    fn hdr_enabled(&self, device_index: usize) -> Result<bool>;
+    fn capture_gamma_ramp(&self, device_index: usize) -> Result<GammaRamp>;
+    fn apply_gamma_ramp(&self, device_index: usize, ramp: &GammaRamp) -> Result<()>;
 }
 
 #[cfg(not(windows))]
@@ -31,19 +31,19 @@ mod unsupported {
     }
 
     impl DisplayPlatform for UnsupportedDisplayPlatform {
-        fn hdr_enabled(&self) -> Result<bool> {
+        fn hdr_enabled(&self, _device_index: usize) -> Result<bool> {
             Err(Error::platform(
                 "reading Windows HDR state is only supported on Windows",
             ))
         }
 
-        fn capture_gamma_ramp(&self) -> Result<GammaRamp> {
+        fn capture_gamma_ramp(&self, _device_index: usize) -> Result<GammaRamp> {
             Err(Error::platform(
                 "capturing a Windows gamma ramp is only supported on Windows",
             ))
         }
 
-        fn apply_gamma_ramp(&self, _ramp: &GammaRamp) -> Result<()> {
+        fn apply_gamma_ramp(&self, _device_index: usize, _ramp: &GammaRamp) -> Result<()> {
             Err(Error::platform(
                 "applying a Windows gamma ramp is only supported on Windows",
             ))

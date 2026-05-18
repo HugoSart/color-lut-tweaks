@@ -8,7 +8,10 @@ use crate::platform::DisplayPlatform;
 
 const ERROR_SUCCESS: i32 = 0;
 const QDC_ONLY_ACTIVE_PATHS: u32 = 0x00000002;
+const DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME: u32 = 1;
 const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO: u32 = 9;
+const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2: u32 = 15;
+const DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR: u32 = 2;
 const DISPLAY_DEVICE_ACTIVE: u32 = 0x00000001;
 const DISPLAY_DRIVER: &[u16] = &[
     'D' as u16, 'I' as u16, 'S' as u16, 'P' as u16, 'L' as u16, 'A' as u16, 'Y' as u16, 0,
@@ -23,21 +26,22 @@ impl WindowsDisplayPlatform {
 }
 
 impl DisplayPlatform for WindowsDisplayPlatform {
-    fn hdr_enabled(&self) -> Result<bool> {
-        hdr_enabled()
+    fn hdr_enabled(&self, device_index: usize) -> Result<bool> {
+        hdr_enabled(device_index)
     }
 
-    fn capture_gamma_ramp(&self) -> Result<GammaRamp> {
-        capture_gamma_ramp()
+    fn capture_gamma_ramp(&self, device_index: usize) -> Result<GammaRamp> {
+        capture_gamma_ramp(device_index)
     }
 
-    fn apply_gamma_ramp(&self, ramp: &GammaRamp) -> Result<()> {
-        apply_gamma_ramp(ramp)
+    fn apply_gamma_ramp(&self, device_index: usize, ramp: &GammaRamp) -> Result<()> {
+        apply_gamma_ramp(device_index, ramp)
     }
 }
 
-fn capture_gamma_ramp() -> Result<GammaRamp> {
-    let hdc = DisplayDc::primary()?;
+fn capture_gamma_ramp(device_index: usize) -> Result<GammaRamp> {
+    let display = active_display_name(device_index)?;
+    let hdc = DisplayDc::for_display(&display)?;
     let mut values = [[0u16; ENTRIES]; 3];
     let ok = unsafe { GetDeviceGammaRamp(hdc.0, values.as_mut_ptr().cast::<c_void>()) };
 
@@ -54,54 +58,127 @@ fn capture_gamma_ramp() -> Result<GammaRamp> {
     GammaRamp::from_bytes(&bytes)
 }
 
-fn apply_gamma_ramp(ramp: &GammaRamp) -> Result<()> {
-    let displays = active_display_names()?;
-    let mut last_error = None;
+fn apply_gamma_ramp(device_index: usize, ramp: &GammaRamp) -> Result<()> {
+    let display = active_display_name(device_index)?;
+    let hdc = DisplayDc::for_display(&display)?;
+    let ok = unsafe { SetDeviceGammaRamp(hdc.0, ramp.values().as_ptr().cast::<c_void>()) };
 
-    for display in displays {
-        let hdc = DisplayDc::for_display(&display)?;
-        let ok = unsafe { SetDeviceGammaRamp(hdc.0, ramp.values().as_ptr().cast::<c_void>()) };
-
-        if ok != 0 {
-            return Ok(());
-        }
-
-        last_error = Some(last_os_error(&format!(
-            "SetDeviceGammaRamp failed for {}",
+    if ok == 0 {
+        return Err(last_os_error(&format!(
+            "SetDeviceGammaRamp failed for device {device_index} ({})",
             display_name_lossy(&display)
         )));
     }
 
-    Err(last_error.unwrap_or_else(|| Error::platform("no active display devices found")))
+    Ok(())
 }
 
-fn hdr_enabled() -> Result<bool> {
-    let paths = active_display_paths()?;
+fn hdr_enabled(device_index: usize) -> Result<bool> {
+    let display = active_display_name(device_index)?;
+    let path = active_display_path_for_display_name(&display)?;
 
-    for path in paths {
-        let mut info = DisplayConfigGetAdvancedColorInfo {
-            header: DisplayConfigDeviceInfoHeader {
-                r#type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
-                size: size_of::<DisplayConfigGetAdvancedColorInfo>() as u32,
-                adapter_id: path.target_info.adapter_id,
-                id: path.target_info.id,
-            },
-            value: 0,
-            color_encoding: 0,
-            bits_per_color_channel: 0,
-        };
+    if let Some(enabled) = hdr_enabled_from_advanced_color_info_2(device_index, &path)? {
+        return Ok(enabled);
+    }
 
-        let status = unsafe { DisplayConfigGetDeviceInfo((&mut info as *mut _) as *mut c_void) };
-        if status != ERROR_SUCCESS {
-            continue;
-        }
+    hdr_enabled_from_advanced_color_info(device_index, &path)
+}
 
-        if info.value & 0x2 != 0 {
-            return Ok(true);
+fn hdr_enabled_from_advanced_color_info_2(
+    device_index: usize,
+    path: &DisplayConfigPathInfo,
+) -> Result<Option<bool>> {
+    let mut info = DisplayConfigGetAdvancedColorInfo2 {
+        header: DisplayConfigDeviceInfoHeader {
+            r#type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2,
+            size: size_of::<DisplayConfigGetAdvancedColorInfo2>() as u32,
+            adapter_id: path.target_info.adapter_id,
+            id: path.target_info.id,
+        },
+        value: 0,
+        color_encoding: 0,
+        bits_per_color_channel: 0,
+        active_color_mode: 0,
+    };
+
+    let status = unsafe { DisplayConfigGetDeviceInfo((&mut info as *mut _) as *mut c_void) };
+    if status == ERROR_SUCCESS {
+        return Ok(Some(
+            info.active_color_mode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR,
+        ));
+    }
+
+    // Older Windows builds may not support ADVANCED_COLOR_INFO_2. Fall back to
+    // the older query below, but only when the newer query is unavailable.
+    const ERROR_INVALID_PARAMETER: i32 = 87;
+    if status == ERROR_INVALID_PARAMETER {
+        return Ok(None);
+    }
+
+    Err(Error::platform(format!(
+        "DisplayConfigGetDeviceInfo advanced color info 2 failed for device {device_index} with status {status}"
+    )))
+}
+
+fn hdr_enabled_from_advanced_color_info(
+    device_index: usize,
+    path: &DisplayConfigPathInfo,
+) -> Result<bool> {
+    let mut info = DisplayConfigGetAdvancedColorInfo {
+        header: DisplayConfigDeviceInfoHeader {
+            r#type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+            size: size_of::<DisplayConfigGetAdvancedColorInfo>() as u32,
+            adapter_id: path.target_info.adapter_id,
+            id: path.target_info.id,
+        },
+        value: 0,
+        color_encoding: 0,
+        bits_per_color_channel: 0,
+    };
+
+    let status = unsafe { DisplayConfigGetDeviceInfo((&mut info as *mut _) as *mut c_void) };
+    if status != ERROR_SUCCESS {
+        return Err(Error::platform(format!(
+            "DisplayConfigGetDeviceInfo failed for device {device_index} with status {status}"
+        )));
+    }
+
+    Ok(info.value & 0x2 != 0)
+}
+
+fn active_display_path_for_display_name(display_name: &[u16]) -> Result<DisplayConfigPathInfo> {
+    for path in active_display_paths()? {
+        let source_name = source_display_name(&path)?;
+        if source_name == display_name {
+            return Ok(path);
         }
     }
 
-    Ok(false)
+    Err(Error::platform(format!(
+        "could not match {} to an active display path",
+        display_name_lossy(display_name)
+    )))
+}
+
+fn source_display_name(path: &DisplayConfigPathInfo) -> Result<Vec<u16>> {
+    let mut source_name = DisplayConfigSourceDeviceName {
+        header: DisplayConfigDeviceInfoHeader {
+            r#type: DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
+            size: size_of::<DisplayConfigSourceDeviceName>() as u32,
+            adapter_id: path.source_info.adapter_id,
+            id: path.source_info.id,
+        },
+        view_gdi_device_name: [0; 32],
+    };
+
+    let status = unsafe { DisplayConfigGetDeviceInfo((&mut source_name as *mut _) as *mut c_void) };
+    if status != ERROR_SUCCESS {
+        return Err(Error::platform(format!(
+            "DisplayConfigGetDeviceInfo source name failed with status {status}"
+        )));
+    }
+
+    Ok(null_terminated_slice(&source_name.view_gdi_device_name))
 }
 
 fn active_display_paths() -> Result<Vec<DisplayConfigPathInfo>> {
@@ -167,6 +244,16 @@ fn active_display_names() -> Result<Vec<Vec<u16>>> {
     Ok(names)
 }
 
+fn active_display_name(device_index: usize) -> Result<Vec<u16>> {
+    let names = active_display_names()?;
+    names.get(device_index).cloned().ok_or_else(|| {
+        Error::platform(format!(
+            "device index {device_index} is out of range; {} active display(s) found",
+            names.len()
+        ))
+    })
+}
+
 fn null_terminated_slice(value: &[u16]) -> Vec<u16> {
     let len = value
         .iter()
@@ -193,11 +280,6 @@ fn last_os_error(context: &str) -> Error {
 struct DisplayDc(Hdc);
 
 impl DisplayDc {
-    fn primary() -> Result<Self> {
-        let displays = active_display_names()?;
-        Self::for_display(&displays[0])
-    }
-
     fn for_display(display_name: &[u16]) -> Result<Self> {
         let hdc = unsafe {
             CreateDCW(
@@ -310,6 +392,23 @@ struct DisplayConfigGetAdvancedColorInfo {
     value: u32,
     color_encoding: u32,
     bits_per_color_channel: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct DisplayConfigGetAdvancedColorInfo2 {
+    header: DisplayConfigDeviceInfoHeader,
+    value: u32,
+    color_encoding: u32,
+    bits_per_color_channel: u32,
+    active_color_mode: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct DisplayConfigSourceDeviceName {
+    header: DisplayConfigDeviceInfoHeader,
+    view_gdi_device_name: [u16; 32],
 }
 
 #[repr(C)]

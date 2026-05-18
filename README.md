@@ -24,28 +24,69 @@ That means:
 Inspect a LUT:
 
 ```powershell
-cargo run -- inspect "C:\path\to\file.lut"
+cargo run -- inspect --device 0 --hdr-lut "C:\path\to\file.lut"
 ```
 
 Apply a LUT immediately:
 
 ```powershell
-cargo run -- apply "C:\path\to\file.lut"
+cargo run -- apply --device 0 --hdr-lut "C:\path\to\file.lut"
+```
+
+Run in watch mode using root-level options:
+
+```powershell
+.\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json
+.\target\debug\hdr-tweaks.exe --device=0 --hdr-lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
+.\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json --device=0 --hdr-lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
+```
+
+Use a config file for defaults with an explicit command:
+
+```powershell
+cargo run -- apply --config ".\hdr-tweaks.json"
+```
+
+Example config:
+
+```json
+{
+  "device": 0,
+  "hdr_lut": "C:\\path\\to\\file.lut"
+}
+```
+
+`device` is a zero-based active display index. Relative paths in the config are resolved relative to the config file. Explicit CLI options override config defaults:
+
+```powershell
+cargo run -- apply --config ".\hdr-tweaks.json" --device 1 --hdr-lut "C:\other\file.lut"
+```
+
+Run apply without a LUT:
+
+```powershell
+cargo run -- apply
 ```
 
 Reset gamma to an in-code identity ramp:
 
 ```powershell
-cargo run -- reset
+cargo run -- reset --device 0
 ```
 
 Watch Windows HDR state and apply/restore automatically:
 
 ```powershell
-cargo run -- watch "C:\path\to\file.lut"
+cargo run -- watch --config ".\hdr-tweaks.json"
 ```
 
 `watch` captures the current gamma ramp on startup, polls HDR state, applies the LUT when HDR is enabled, and restores the captured ramp when HDR is disabled.
+
+You can also pass the LUT directly:
+
+```powershell
+cargo run -- watch --device 0 --hdr-lut "C:\path\to\file.lut"
+```
 
 ## Build
 
@@ -62,7 +103,7 @@ target\debug\hdr-tweaks.exe
 Run it directly:
 
 ```powershell
-.\target\debug\hdr-tweaks.exe inspect "C:\path\to\file.lut"
+.\target\debug\hdr-tweaks.exe inspect --device 0 --hdr-lut "C:\path\to\file.lut"
 ```
 
 ## Tests
@@ -92,6 +133,8 @@ tests\fixtures\
 Current fixtures:
 
 ```text
+config-invalid.json
+config-xiaomi.json
 valid-xiaomi-27i-pro.lut
 invalid-too-small.lut
 ```
@@ -119,6 +162,8 @@ tests/
 ## Notes
 
 - Applying and watching HDR state are Windows-only.
+- Root-level `--config`, `--device`, and `--hdr-lut` run the default watch behavior.
+- `--device` defaults to `0` when omitted.
 - `reset` uses an identity ramp generated in source code, not a fixture file.
 - `inspect` and LUT parsing are platform-neutral.
 - `watch` currently polls HDR state every 2 seconds.

@@ -9,30 +9,30 @@ use hdr_tweaks::platform::DisplayPlatform;
 fn reset_applies_identity_ramp_from_source_code() {
     let platform = MockDisplayPlatform::default();
 
-    app::reset_gamma(&platform).unwrap();
+    app::reset_gamma(&platform, 2).unwrap();
 
     assert_eq!(
         platform.applied.borrow().as_ref(),
-        Some(&GammaRamp::identity())
+        Some(&(2, GammaRamp::identity()))
     );
 }
 
 #[derive(Default)]
 struct MockDisplayPlatform {
-    applied: RefCell<Option<GammaRamp>>,
+    applied: RefCell<Option<(usize, GammaRamp)>>,
 }
 
 impl DisplayPlatform for MockDisplayPlatform {
-    fn hdr_enabled(&self) -> Result<bool> {
+    fn hdr_enabled(&self, _device_index: usize) -> Result<bool> {
         unreachable!("reset does not read HDR state")
     }
 
-    fn capture_gamma_ramp(&self) -> Result<GammaRamp> {
+    fn capture_gamma_ramp(&self, _device_index: usize) -> Result<GammaRamp> {
         unreachable!("reset does not capture gamma")
     }
 
-    fn apply_gamma_ramp(&self, ramp: &GammaRamp) -> Result<()> {
-        self.applied.replace(Some(ramp.clone()));
+    fn apply_gamma_ramp(&self, device_index: usize, ramp: &GammaRamp) -> Result<()> {
+        self.applied.replace(Some((device_index, ramp.clone())));
         Ok(())
     }
 }

@@ -8,6 +8,10 @@ pub enum Error {
         path: Option<std::path::PathBuf>,
         source: std::io::Error,
     },
+    ConfigJson {
+        path: std::path::PathBuf,
+        source: serde_json::Error,
+    },
     InvalidLutSize {
         expected: usize,
         actual: usize,
@@ -32,6 +36,9 @@ impl fmt::Display for Error {
                     write!(f, "I/O error: {source}")
                 }
             }
+            Self::ConfigJson { path, source } => {
+                write!(f, "failed to parse config {}: {source}", path.display())
+            }
             Self::InvalidLutSize { expected, actual } => {
                 write!(
                     f,
@@ -48,6 +55,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
+            Self::ConfigJson { source, .. } => Some(source),
             _ => None,
         }
     }
