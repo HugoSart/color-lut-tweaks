@@ -42,6 +42,15 @@ Run in watch mode using root-level options:
 .\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json --mode=sdr --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
 ```
 
+Start the full configured runtime:
+
+```powershell
+.\target\debug\hdr-tweaks.exe start
+.\target\debug\hdr-tweaks.exe start --config=.\config.json
+```
+
+When `--config` is omitted, `start` looks for `config.json` in the same folder as `hdr-tweaks.exe`.
+
 Use a config file for defaults with an explicit command:
 
 ```powershell
@@ -92,6 +101,25 @@ cargo run -- watch --mode hdr --device 0 --lut "C:\path\to\file.lut"
 cargo run -- watch --mode sdr --device 0 --lut "C:\path\to\file.lut"
 ```
 
+`start` uses an array of tweak entries. Each entry behaves like a coordinated watch rule. For example, this applies `sdr.lut` while device 0 is in SDR, switches to `hdr.lut` when device 0 enters HDR, and switches back to `sdr.lut` when device 0 leaves HDR:
+
+```json
+[
+  {
+    "device": 0,
+    "mode": "hdr",
+    "lut": "hdr.lut"
+  },
+  {
+    "device": 0,
+    "mode": "sdr",
+    "lut": "sdr.lut"
+  }
+]
+```
+
+If a `start` entry omits `device`, it applies to all active devices. If it omits `mode`, it defaults to `hdr`, matching `watch`.
+
 ## Build
 
 ```powershell
@@ -139,6 +167,7 @@ Current fixtures:
 ```text
 config-invalid.json
 config-xiaomi.json
+start-config.json
 valid-xiaomi-27i-pro.lut
 invalid-too-small.lut
 ```
@@ -170,6 +199,7 @@ tests/
 - `apply` ignores display mode unless `--mode` is specified.
 - `reset` always ignores display mode.
 - `watch` defaults to `--mode hdr` when mode is omitted.
+- `start` loads an array config and keeps one matching LUT active per device based on current HDR/SDR state.
 - When `--device` is omitted, apply/reset/watch target all active devices.
 - `reset` uses an identity ramp generated in source code, not a fixture file.
 - `inspect` and LUT parsing are platform-neutral.

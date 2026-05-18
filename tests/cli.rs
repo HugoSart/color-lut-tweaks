@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use hdr_tweaks::app::{ColorMode, TweakOptions};
-use hdr_tweaks::cli::{self, CliTweakOptions, Command as CliCommand};
+use hdr_tweaks::cli::{self, CliTweakOptions, Command as CliCommand, StartOptions};
 
 #[test]
 fn reset_parses_as_command_not_path() {
@@ -117,6 +117,71 @@ fn root_config_and_lut_equals_arguments_parse_as_watch_with_override() {
         path,
         std::path::PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")
     );
+}
+
+#[test]
+fn start_parses_without_config() {
+    let args = vec!["start".to_string()];
+
+    let Ok(CliCommand::Start(StartOptions { config: None })) = cli::parse_command(&args) else {
+        panic!("expected start command without explicit config");
+    };
+}
+
+#[test]
+fn start_parses_config_argument() {
+    let args = vec![
+        "start".to_string(),
+        "--config".to_string(),
+        "tests/fixtures/start-config.json".to_string(),
+    ];
+
+    let Ok(CliCommand::Start(StartOptions {
+        config: Some(config),
+    })) = cli::parse_command(&args)
+    else {
+        panic!("expected start command with config path");
+    };
+
+    assert_eq!(
+        config,
+        std::path::PathBuf::from("tests/fixtures/start-config.json")
+    );
+}
+
+#[test]
+fn start_parses_config_equals_argument() {
+    let args = vec![
+        "start".to_string(),
+        "--config=tests/fixtures/start-config.json".to_string(),
+    ];
+
+    let Ok(CliCommand::Start(StartOptions {
+        config: Some(config),
+    })) = cli::parse_command(&args)
+    else {
+        panic!("expected start command with config path");
+    };
+
+    assert_eq!(
+        config,
+        std::path::PathBuf::from("tests/fixtures/start-config.json")
+    );
+}
+
+#[test]
+fn start_only_accepts_config_argument() {
+    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+        .arg("start")
+        .arg("--lut")
+        .arg("tests/fixtures/valid-xiaomi-27i-pro.lut")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("unknown option `--lut`"));
 }
 
 #[test]

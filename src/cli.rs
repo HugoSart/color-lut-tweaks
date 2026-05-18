@@ -9,6 +9,7 @@ pub enum Command {
     Apply(CliTweakOptions),
     Reset(CliTweakOptions),
     Watch(CliTweakOptions),
+    Start(StartOptions),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -29,6 +30,11 @@ impl CliTweakOptions {
 
         Ok(resolved)
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StartOptions {
+    pub config: Option<PathBuf>,
 }
 
 pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
@@ -78,6 +84,12 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             }
             app::watch_tweaks(&platform, &tweaks)?;
         }
+        Command::Start(options) => {
+            let config = options.config.unwrap_or(default_start_config_path()?);
+            let tweaks = TweakOptions::list_from_config_file(&config)?;
+            println!("Starting from {}", config.display());
+            app::start_tweaks(&platform, &tweaks)?;
+        }
     }
 
     Ok(())
@@ -96,6 +108,9 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
         [command, rest @ ..] if command == "inspect" => Ok(Command::Inspect(parse_options(rest)?)),
         [command, rest @ ..] if command == "apply" => Ok(Command::Apply(parse_options(rest)?)),
         [command, rest @ ..] if command == "watch" => Ok(Command::Watch(parse_options(rest)?)),
+        [command, rest @ ..] if command == "start" => {
+            Ok(Command::Start(parse_start_options(rest)?))
+        }
         [first, ..] if first.starts_with('-') => Ok(Command::Watch(parse_options(args)?)),
         _ => Err(Error::InvalidArguments(expected_usage())),
     }
@@ -118,6 +133,7 @@ pub fn print_usage() {
     eprintln!(
         "  hdr-tweaks watch [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
     );
+    eprintln!("  hdr-tweaks start [--config <config.json>]");
 }
 
 fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
@@ -185,7 +201,55 @@ fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
     Ok(options)
 }
 
+fn parse_start_options(args: &[String]) -> Result<StartOptions> {
+    let mut options = StartOptions::default();
+    let mut index = 0;
+
+    while index < args.len() {
+        let value = args[index].as_str();
+        if let Some(path) = value.strip_prefix("--config=") {
+            set_start_config(&mut options, path)?;
+            index += 1;
+            continue;
+        }
+
+        match value {
+            "--config" => {
+                let path = args
+                    .get(index + 1)
+                    .ok_or_else(|| expected_value("--config"))?;
+                set_start_config(&mut options, path)?;
+                index += 2;
+            }
+            value if value.starts_with('-') => {
+                return Err(Error::InvalidArguments(format!("unknown option `{value}`")));
+            }
+            _ => {
+                return Err(Error::InvalidArguments(
+                    "`start` accepts only `--config <config.json>`".to_string(),
+                ));
+            }
+        }
+    }
+
+    Ok(options)
+}
+
 fn set_config(options: &mut CliTweakOptions, path: impl AsRef<str>) -> Result<()> {
+    let path = path.as_ref();
+    if path.is_empty() {
+        return Err(expected_value("--config"));
+    }
+    if options.config.is_some() {
+        return Err(Error::InvalidArguments(
+            "`--config` can only be provided once".to_string(),
+        ));
+    }
+    options.config = Some(PathBuf::from(path));
+    Ok(())
+}
+
+fn set_start_config(options: &mut StartOptions, path: impl AsRef<str>) -> Result<()> {
     let path = path.as_ref();
     if path.is_empty() {
         return Err(expected_value("--config"));
@@ -269,7 +333,15 @@ fn require_lut<'a>(tweaks: &'a TweakOptions, command: &str) -> Result<&'a PathBu
     })
 }
 
+fn default_start_config_path() -> Result<PathBuf> {
+    let exe_path = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
+    Ok(exe_path.parent().map_or_else(
+        || PathBuf::from("config.json"),
+        |path| path.join("config.json"),
+    ))
+}
+
 fn expected_usage() -> String {
-    "expected root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, or `reset [--device <index>]`"
+    "expected root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, `reset [--device <index>]`, or `start [--config <path>]`"
         .to_string()
 }
