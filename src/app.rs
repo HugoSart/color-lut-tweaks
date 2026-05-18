@@ -13,8 +13,8 @@ pub const IDENTITY_LUT: &str = "identity";
 pub fn default_config_path() -> Result<PathBuf> {
     let exe_path = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
     Ok(exe_path.parent().map_or_else(
-        || PathBuf::from("identity-config.json"),
-        |path| path.join("identity-config.json"),
+        || PathBuf::from("config.json"),
+        |path| path.join("config.json"),
     ))
 }
 
