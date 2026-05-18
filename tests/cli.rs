@@ -19,7 +19,7 @@ fn lut_path_parses_as_optional_lut_argument() {
         "apply".to_string(),
         "--device".to_string(),
         "1".to_string(),
-        "--hdr-lut".to_string(),
+        "--lut".to_string(),
         "tests/fixtures/valid-xiaomi-27i-pro.lut".to_string(),
     ];
 
@@ -41,8 +41,8 @@ fn lut_path_parses_as_optional_lut_argument() {
 }
 
 #[test]
-fn root_hdr_lut_equals_argument_parses_as_watch_defaults() {
-    let args = vec!["--hdr-lut=tests/fixtures/valid-xiaomi-27i-pro.lut".to_string()];
+fn root_lut_equals_argument_parses_as_watch_defaults() {
+    let args = vec!["--lut=tests/fixtures/valid-xiaomi-27i-pro.lut".to_string()];
 
     let Ok(CliCommand::Watch(CliTweakOptions {
         config: None,
@@ -52,7 +52,7 @@ fn root_hdr_lut_equals_argument_parses_as_watch_defaults() {
         },
     })) = cli::parse_command(&args)
     else {
-        panic!("expected root hdr-lut option to run watch mode");
+        panic!("expected root lut option to run watch mode");
     };
 
     assert_eq!(
@@ -83,11 +83,11 @@ fn root_config_equals_argument_parses_as_watch_defaults() {
 }
 
 #[test]
-fn root_config_and_hdr_lut_equals_arguments_parse_as_watch_with_override() {
+fn root_config_and_lut_equals_arguments_parse_as_watch_with_override() {
     let args = vec![
         "--config=tests/fixtures/config-invalid.json".to_string(),
         "--device=1".to_string(),
-        "--hdr-lut=tests/fixtures/valid-xiaomi-27i-pro.lut".to_string(),
+        "--lut=tests/fixtures/valid-xiaomi-27i-pro.lut".to_string(),
     ];
 
     let Ok(CliCommand::Watch(CliTweakOptions {
@@ -98,7 +98,7 @@ fn root_config_and_hdr_lut_equals_arguments_parse_as_watch_with_override() {
         },
     })) = cli::parse_command(&args)
     else {
-        panic!("expected root config and hdr-lut options to run watch mode");
+        panic!("expected root config and lut options to run watch mode");
     };
 
     assert_eq!(
@@ -197,7 +197,7 @@ fn inspect_without_lut_argument_fails() {
 fn inspect_prints_lut_summary() {
     let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
         .arg("inspect")
-        .arg("--hdr-lut")
+        .arg("--lut")
         .arg("tests/fixtures/valid-xiaomi-27i-pro.lut")
         .output()
         .unwrap();
@@ -232,7 +232,7 @@ fn explicit_lut_overrides_config_file_default() {
         .arg("inspect")
         .arg("--config")
         .arg("tests/fixtures/config-invalid.json")
-        .arg("--hdr-lut")
+        .arg("--lut")
         .arg("tests/fixtures/valid-xiaomi-27i-pro.lut")
         .output()
         .unwrap();
@@ -247,7 +247,7 @@ fn explicit_lut_overrides_config_file_default() {
 fn inspect_bad_path_fails() {
     let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
         .arg("inspect")
-        .arg("--hdr-lut")
+        .arg("--lut")
         .arg("tests/fixtures/missing.lut")
         .output()
         .unwrap();
@@ -262,7 +262,7 @@ fn inspect_bad_path_fails() {
 fn inspect_malformed_lut_fails() {
     let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
         .arg("inspect")
-        .arg("--hdr-lut")
+        .arg("--lut")
         .arg("tests/fixtures/invalid-too-small.lut")
         .output()
         .unwrap();
@@ -287,10 +287,10 @@ fn bare_lut_path_is_not_accepted() {
 }
 
 #[test]
-fn legacy_lut_flag_is_not_accepted() {
+fn old_hdr_lut_flag_is_not_accepted() {
     let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
         .arg("inspect")
-        .arg("--lut")
+        .arg("--hdr-lut")
         .arg("tests/fixtures/valid-xiaomi-27i-pro.lut")
         .output()
         .unwrap();
@@ -298,5 +298,5 @@ fn legacy_lut_flag_is_not_accepted() {
     assert!(!output.status.success());
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("unknown option `--lut`"));
+    assert!(stderr.contains("unknown option `--hdr-lut`"));
 }

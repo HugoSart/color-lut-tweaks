@@ -62,8 +62,12 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
         }
         Command::Reset(options) => {
             let tweaks = options.resolve()?;
-            app::reset_gamma(&platform, tweaks.device.unwrap_or(0))?;
-            println!("Reset gamma ramp to identity");
+            app::reset_gamma(&platform, tweaks.device)?;
+            if let Some(device) = tweaks.device {
+                println!("Reset gamma ramp to identity on device {device}");
+            } else {
+                println!("Reset gamma ramp to identity on all devices");
+            }
         }
         Command::Watch(options) => {
             let tweaks = options.resolve()?;
@@ -100,19 +104,17 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
 pub fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  hdr-tweaks --config=<config.json>");
-    eprintln!("  hdr-tweaks --device=<index> --hdr-lut=<path-to-1536-byte-lut>");
+    eprintln!("  hdr-tweaks --device=<index> --lut=<path-to-1536-byte-lut>");
+    eprintln!("  hdr-tweaks --config=<config.json> --device=<index> --lut=<path-to-1536-byte-lut>");
     eprintln!(
-        "  hdr-tweaks --config=<config.json> --device=<index> --hdr-lut=<path-to-1536-byte-lut>"
+        "  hdr-tweaks inspect [--config <config.json>] [--device <index>] --lut <path-to-1536-byte-lut>"
     );
     eprintln!(
-        "  hdr-tweaks inspect [--config <config.json>] [--device <index>] --hdr-lut <path-to-1536-byte-lut>"
-    );
-    eprintln!(
-        "  hdr-tweaks apply [--config <config.json>] [--device <index>] [--hdr-lut <path-to-1536-byte-lut>]"
+        "  hdr-tweaks apply [--config <config.json>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
     );
     eprintln!("  hdr-tweaks reset [--device <index>]");
     eprintln!(
-        "  hdr-tweaks watch [--config <config.json>] [--device <index>] [--hdr-lut <path-to-1536-byte-lut>]"
+        "  hdr-tweaks watch [--config <config.json>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
     );
 }
 
@@ -127,8 +129,8 @@ fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
             index += 1;
             continue;
         }
-        if let Some(path) = value.strip_prefix("--hdr-lut=") {
-            set_hdr_lut(&mut options, path, "--hdr-lut")?;
+        if let Some(path) = value.strip_prefix("--lut=") {
+            set_lut(&mut options, path, "--lut")?;
             index += 1;
             continue;
         }
@@ -145,11 +147,9 @@ fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
                 set_config(&mut options, path)?;
                 index += 2;
             }
-            "--hdr-lut" => {
-                let path = args
-                    .get(index + 1)
-                    .ok_or_else(|| expected_value("--hdr-lut"))?;
-                set_hdr_lut(&mut options, path, "--hdr-lut")?;
+            "--lut" => {
+                let path = args.get(index + 1).ok_or_else(|| expected_value("--lut"))?;
+                set_lut(&mut options, path, "--lut")?;
                 index += 2;
             }
             "--device" => {
@@ -185,14 +185,14 @@ fn set_config(options: &mut CliTweakOptions, path: impl AsRef<str>) -> Result<()
     Ok(())
 }
 
-fn set_hdr_lut(options: &mut CliTweakOptions, path: impl AsRef<str>, flag: &str) -> Result<()> {
+fn set_lut(options: &mut CliTweakOptions, path: impl AsRef<str>, flag: &str) -> Result<()> {
     let path = path.as_ref();
     if path.is_empty() {
         return Err(expected_value(flag));
     }
     if options.tweaks.lut.is_some() {
         return Err(Error::InvalidArguments(
-            "`--hdr-lut` can only be provided once".to_string(),
+            "`--lut` can only be provided once".to_string(),
         ));
     }
     options.tweaks.lut = Some(PathBuf::from(path));
@@ -227,12 +227,12 @@ fn expected_value(flag: &str) -> Error {
 fn require_lut<'a>(tweaks: &'a TweakOptions, command: &str) -> Result<&'a PathBuf> {
     tweaks.lut.as_ref().ok_or_else(|| {
         Error::InvalidArguments(format!(
-            "`{command}` needs a LUT path; pass `--hdr-lut <path-to-1536-byte-lut>`"
+            "`{command}` needs a LUT path; pass `--lut <path-to-1536-byte-lut>`"
         ))
     })
 }
 
 fn expected_usage() -> String {
-    "expected root options `--config=<path>`, `--device=<index>`, and/or `--hdr-lut=<path>`, or `inspect/apply/watch` with the same options, or `reset [--device <index>]`"
+    "expected root options `--config=<path>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, or `reset [--device <index>]`"
         .to_string()
 }

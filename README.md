@@ -24,21 +24,21 @@ That means:
 Inspect a LUT:
 
 ```powershell
-cargo run -- inspect --device 0 --hdr-lut "C:\path\to\file.lut"
+cargo run -- inspect --device 0 --lut "C:\path\to\file.lut"
 ```
 
 Apply a LUT immediately:
 
 ```powershell
-cargo run -- apply --device 0 --hdr-lut "C:\path\to\file.lut"
+cargo run -- apply --device 0 --lut "C:\path\to\file.lut"
 ```
 
 Run in watch mode using root-level options:
 
 ```powershell
 .\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json
-.\target\debug\hdr-tweaks.exe --device=0 --hdr-lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
-.\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json --device=0 --hdr-lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
+.\target\debug\hdr-tweaks.exe --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
+.\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
 ```
 
 Use a config file for defaults with an explicit command:
@@ -52,14 +52,14 @@ Example config:
 ```json
 {
   "device": 0,
-  "hdr_lut": "C:\\path\\to\\file.lut"
+  "lut": "C:\\path\\to\\file.lut"
 }
 ```
 
-`device` is a zero-based active display index. Relative paths in the config are resolved relative to the config file. Explicit CLI options override config defaults:
+`device` is a zero-based active display index. If omitted, apply/reset/watch target all active devices. Relative paths in the config are resolved relative to the config file. Explicit CLI options override config defaults:
 
 ```powershell
-cargo run -- apply --config ".\hdr-tweaks.json" --device 1 --hdr-lut "C:\other\file.lut"
+cargo run -- apply --config ".\hdr-tweaks.json" --device 1 --lut "C:\other\file.lut"
 ```
 
 Run apply without a LUT:
@@ -71,6 +71,7 @@ cargo run -- apply
 Reset gamma to an in-code identity ramp:
 
 ```powershell
+cargo run -- reset
 cargo run -- reset --device 0
 ```
 
@@ -85,7 +86,7 @@ cargo run -- watch --config ".\hdr-tweaks.json"
 You can also pass the LUT directly:
 
 ```powershell
-cargo run -- watch --device 0 --hdr-lut "C:\path\to\file.lut"
+cargo run -- watch --device 0 --lut "C:\path\to\file.lut"
 ```
 
 ## Build
@@ -103,7 +104,7 @@ target\debug\hdr-tweaks.exe
 Run it directly:
 
 ```powershell
-.\target\debug\hdr-tweaks.exe inspect --device 0 --hdr-lut "C:\path\to\file.lut"
+.\target\debug\hdr-tweaks.exe inspect --device 0 --lut "C:\path\to\file.lut"
 ```
 
 ## Tests
@@ -162,8 +163,8 @@ tests/
 ## Notes
 
 - Applying and watching HDR state are Windows-only.
-- Root-level `--config`, `--device`, and `--hdr-lut` run the default watch behavior.
-- `--device` defaults to `0` when omitted.
+- Root-level `--config`, `--device`, and `--lut` run the default watch behavior.
+- When `--device` is omitted, apply/reset/watch target all active devices.
 - `reset` uses an identity ramp generated in source code, not a fixture file.
 - `inspect` and LUT parsing are platform-neutral.
 - `watch` currently polls HDR state every 2 seconds.

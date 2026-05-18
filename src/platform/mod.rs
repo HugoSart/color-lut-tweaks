@@ -11,6 +11,7 @@ pub use windows::WindowsDisplayPlatform as SystemDisplayPlatform;
 pub use unsupported::UnsupportedDisplayPlatform as SystemDisplayPlatform;
 
 pub trait DisplayPlatform {
+    fn active_device_count(&self) -> Result<usize>;
     fn hdr_enabled(&self, device_index: usize) -> Result<bool>;
     fn capture_gamma_ramp(&self, device_index: usize) -> Result<GammaRamp>;
     fn apply_gamma_ramp(&self, device_index: usize, ramp: &GammaRamp) -> Result<()>;
@@ -31,6 +32,12 @@ mod unsupported {
     }
 
     impl DisplayPlatform for UnsupportedDisplayPlatform {
+        fn active_device_count(&self) -> Result<usize> {
+            Err(Error::platform(
+                "enumerating Windows display devices is only supported on Windows",
+            ))
+        }
+
         fn hdr_enabled(&self, _device_index: usize) -> Result<bool> {
             Err(Error::platform(
                 "reading Windows HDR state is only supported on Windows",

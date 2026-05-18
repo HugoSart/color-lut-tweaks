@@ -1,4 +1,4 @@
 {
   "device": 0,
-  "hdr_lut": "invalid-too-small.lut"
+  "lut": "invalid-too-small.lut"
 }

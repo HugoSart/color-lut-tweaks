@@ -26,6 +26,10 @@ impl WindowsDisplayPlatform {
 }
 
 impl DisplayPlatform for WindowsDisplayPlatform {
+    fn active_device_count(&self) -> Result<usize> {
+        Ok(active_display_names()?.len())
+    }
+
     fn hdr_enabled(&self, device_index: usize) -> Result<bool> {
         hdr_enabled(device_index)
     }

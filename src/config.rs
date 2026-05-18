@@ -11,7 +11,7 @@ pub struct ConfigFile {
     #[serde(default)]
     pub device: Option<usize>,
     #[serde(default)]
-    pub hdr_lut: Option<PathBuf>,
+    pub lut: Option<PathBuf>,
 }
 
 impl ConfigFile {
@@ -28,11 +28,11 @@ impl ConfigFile {
                 source,
             })?;
 
-        if let Some(lut) = &config.hdr_lut
+        if let Some(lut) = &config.lut
             && lut.is_relative()
             && let Some(parent) = path.parent()
         {
-            config.hdr_lut = Some(parent.join(lut));
+            config.lut = Some(parent.join(lut));
         }
 
         Ok(config)
@@ -41,7 +41,7 @@ impl ConfigFile {
     pub fn into_tweaks(self) -> TweakOptions {
         TweakOptions {
             device: self.device,
-            lut: self.hdr_lut,
+            lut: self.lut,
         }
     }
 }
