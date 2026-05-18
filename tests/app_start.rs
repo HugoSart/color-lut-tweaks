@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use hdr_tweaks::app::{ColorMode, TweakOptions};
+use color_lut_tweaks::app::{ColorMode, TweakOptions};
 
 #[test]
 fn start_config_loads_tweak_options_list() {

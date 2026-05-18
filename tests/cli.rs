@@ -1,7 +1,7 @@
 use std::process::Command;
 
-use hdr_tweaks::app::{ColorMode, TweakOptions};
-use hdr_tweaks::cli::{self, CliTweakOptions, Command as CliCommand, StartOptions};
+use color_lut_tweaks::app::{ColorMode, TweakOptions};
+use color_lut_tweaks::cli::{self, CliTweakOptions, Command as CliCommand, StartOptions};
 
 #[test]
 fn reset_parses_as_command_not_path() {
@@ -171,7 +171,7 @@ fn start_parses_config_equals_argument() {
 
 #[test]
 fn start_only_accepts_config_argument() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("start")
         .arg("--lut")
         .arg("tests/fixtures/valid-xiaomi-27i-pro.lut")
@@ -259,7 +259,7 @@ fn mode_parses_as_shared_option() {
 
 #[test]
 fn mode_must_be_hdr_or_sdr() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("apply")
         .arg("--mode")
         .arg("auto")
@@ -274,7 +274,7 @@ fn mode_must_be_hdr_or_sdr() {
 
 #[test]
 fn device_must_be_zero_based_integer() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("apply")
         .arg("--device")
         .arg("left")
@@ -289,7 +289,7 @@ fn device_must_be_zero_based_integer() {
 
 #[test]
 fn apply_can_run_without_lut_argument() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("apply")
         .output()
         .unwrap();
@@ -302,7 +302,7 @@ fn apply_can_run_without_lut_argument() {
 
 #[test]
 fn inspect_without_lut_argument_fails() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("inspect")
         .output()
         .unwrap();
@@ -315,7 +315,7 @@ fn inspect_without_lut_argument_fails() {
 
 #[test]
 fn inspect_prints_lut_summary() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("inspect")
         .arg("--lut")
         .arg("tests/fixtures/valid-xiaomi-27i-pro.lut")
@@ -333,7 +333,7 @@ fn inspect_prints_lut_summary() {
 
 #[test]
 fn inspect_uses_lut_from_config_file() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("inspect")
         .arg("--config")
         .arg("tests/fixtures/config-xiaomi.json")
@@ -348,7 +348,7 @@ fn inspect_uses_lut_from_config_file() {
 
 #[test]
 fn explicit_lut_overrides_config_file_default() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("inspect")
         .arg("--config")
         .arg("tests/fixtures/config-invalid.json")
@@ -365,7 +365,7 @@ fn explicit_lut_overrides_config_file_default() {
 
 #[test]
 fn inspect_bad_path_fails() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("inspect")
         .arg("--lut")
         .arg("tests/fixtures/missing.lut")
@@ -380,7 +380,7 @@ fn inspect_bad_path_fails() {
 
 #[test]
 fn inspect_malformed_lut_fails() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("inspect")
         .arg("--lut")
         .arg("tests/fixtures/invalid-too-small.lut")
@@ -395,7 +395,7 @@ fn inspect_malformed_lut_fails() {
 
 #[test]
 fn bare_lut_path_is_not_accepted() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("tests/fixtures/valid-xiaomi-27i-pro.lut")
         .output()
         .unwrap();
@@ -408,7 +408,7 @@ fn bare_lut_path_is_not_accepted() {
 
 #[test]
 fn old_hdr_lut_flag_is_not_accepted() {
-    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("inspect")
         .arg("--hdr-lut")
         .arg("tests/fixtures/valid-xiaomi-27i-pro.lut")

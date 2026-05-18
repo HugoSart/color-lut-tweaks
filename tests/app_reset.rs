@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 
-use hdr_tweaks::Result;
-use hdr_tweaks::app;
-use hdr_tweaks::lut::GammaRamp;
-use hdr_tweaks::platform::DisplayPlatform;
+use color_lut_tweaks::Result;
+use color_lut_tweaks::app;
+use color_lut_tweaks::lut::GammaRamp;
+use color_lut_tweaks::platform::DisplayPlatform;
 
 #[test]
 fn reset_applies_identity_ramp_from_source_code() {

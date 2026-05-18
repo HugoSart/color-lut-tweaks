@@ -1,10 +1,10 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 
-use hdr_tweaks::Result;
-use hdr_tweaks::app::{self, ColorMode, TweakOptions};
-use hdr_tweaks::lut::GammaRamp;
-use hdr_tweaks::platform::DisplayPlatform;
+use color_lut_tweaks::Result;
+use color_lut_tweaks::app::{self, ColorMode, TweakOptions};
+use color_lut_tweaks::lut::GammaRamp;
+use color_lut_tweaks::platform::DisplayPlatform;
 
 #[test]
 fn apply_without_mode_does_not_check_display_mode() {

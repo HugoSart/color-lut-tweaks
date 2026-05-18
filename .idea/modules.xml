@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/hdr-tweaks.iml" filepath="$PROJECT_DIR$/hdr-tweaks.iml" />
+      <module fileurl="file://$PROJECT_DIR$/color-lut-tweaks.iml" filepath="$PROJECT_DIR$/color-lut-tweaks.iml" />
     </modules>
   </component>
 </project>

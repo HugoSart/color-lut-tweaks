@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use hdr_tweaks::lut::{Channel, GammaRamp, LUT_SIZE};
+use color_lut_tweaks::lut::{Channel, GammaRamp, LUT_SIZE};
 
 #[test]
 fn identity_ramp_is_generated_in_source_code() {

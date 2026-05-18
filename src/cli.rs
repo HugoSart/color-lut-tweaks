@@ -118,22 +118,22 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
 
 pub fn print_usage() {
     eprintln!("Usage:");
-    eprintln!("  hdr-tweaks --config=<config.json>");
-    eprintln!("  hdr-tweaks --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut>");
+    eprintln!("  color-lut-tweaks --config=<config.json>");
+    eprintln!("  color-lut-tweaks --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut>");
     eprintln!(
-        "  hdr-tweaks --config=<config.json> --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut>"
+        "  color-lut-tweaks --config=<config.json> --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut>"
     );
     eprintln!(
-        "  hdr-tweaks inspect [--config <config.json>] [--device <index>] --lut <path-to-1536-byte-lut>"
+        "  color-lut-tweaks inspect [--config <config.json>] [--device <index>] --lut <path-to-1536-byte-lut>"
     );
     eprintln!(
-        "  hdr-tweaks apply [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
+        "  color-lut-tweaks apply [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
     );
-    eprintln!("  hdr-tweaks reset [--device <index>]");
+    eprintln!("  color-lut-tweaks reset [--device <index>]");
     eprintln!(
-        "  hdr-tweaks watch [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
+        "  color-lut-tweaks watch [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
     );
-    eprintln!("  hdr-tweaks start [--config <config.json>]");
+    eprintln!("  color-lut-tweaks start [--config <config.json>]");
 }
 
 fn parse_options(args: &[String]) -> Result<CliTweakOptions> {

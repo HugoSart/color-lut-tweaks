@@ -1,8 +1,6 @@
-# hdr-tweaks
+# Color LUT Tweaks
 
-Small Windows CLI for loading raw `.lut` gamma ramps and applying them when HDR is active.
-
-The project currently starts as a CLI, but the code is organized library-first so the same core can later be reused by a background/system-tray app.
+Small Windows CLI for loading raw `.lut` gamma ramps and applying them when HDR or SDR is active.
 
 ## LUT Format
 
@@ -37,24 +35,24 @@ cargo run -- apply --mode hdr --device 0 --lut "C:\path\to\file.lut"
 Run in watch mode using root-level options:
 
 ```powershell
-.\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json
-.\target\debug\hdr-tweaks.exe --mode=hdr --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
-.\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json --mode=sdr --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
+.\target\debug\color-lut-tweaks.exe --config=.\color-lut-tweaks.json
+.\target\debug\color-lut-tweaks.exe --mode=hdr --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
+.\target\debug\color-lut-tweaks.exe --config=.\color-lut-tweaks.json --mode=sdr --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
 ```
 
 Start the full configured runtime:
 
 ```powershell
-.\target\debug\hdr-tweaks.exe start
-.\target\debug\hdr-tweaks.exe start --config=.\config.json
+.\target\debug\color-lut-tweaks.exe start
+.\target\debug\color-lut-tweaks.exe start --config=.\config.json
 ```
 
-When `--config` is omitted, `start` looks for `config.json` in the same folder as `hdr-tweaks.exe`.
+When `--config` is omitted, `start` looks for `config.json` in the same folder as `color-lut-tweaks.exe`.
 
 Use a config file for defaults with an explicit command:
 
 ```powershell
-cargo run -- apply --config ".\hdr-tweaks.json"
+cargo run -- apply --config ".\color-lut-tweaks.json"
 ```
 
 Example config:
@@ -70,7 +68,7 @@ Example config:
 `device` is a zero-based active display index. If omitted, apply/reset/watch target all active devices. `mode` is either `hdr` or `sdr`; for `apply`, mode is only checked when specified. For `watch`, omitted mode defaults to `hdr`. Relative paths in the config are resolved relative to the config file. Explicit CLI options override config defaults:
 
 ```powershell
-cargo run -- apply --config ".\hdr-tweaks.json" --mode sdr --device 1 --lut "C:\other\file.lut"
+cargo run -- apply --config ".\color-lut-tweaks.json" --mode sdr --device 1 --lut "C:\other\file.lut"
 ```
 
 Run apply without a LUT:
@@ -89,7 +87,7 @@ cargo run -- reset --device 0
 Watch Windows HDR state and apply/restore automatically:
 
 ```powershell
-cargo run -- watch --config ".\hdr-tweaks.json"
+cargo run -- watch --config ".\color-lut-tweaks.json"
 ```
 
 `watch` captures the current gamma ramp on startup, polls HDR state, applies the LUT when the selected mode matches, and restores the captured ramp when the selected mode no longer matches.
@@ -129,13 +127,13 @@ cargo build
 The executable will be created under:
 
 ```text
-target\debug\hdr-tweaks.exe
+target\debug\color-lut-tweaks.exe
 ```
 
 Run it directly:
 
 ```powershell
-.\target\debug\hdr-tweaks.exe inspect --device 0 --lut "C:\path\to\file.lut"
+.\target\debug\color-lut-tweaks.exe inspect --device 0 --lut "C:\path\to\file.lut"
 ```
 
 ## Tests
