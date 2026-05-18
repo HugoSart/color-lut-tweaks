@@ -33,6 +33,12 @@ Apply a LUT immediately:
 cargo run -- apply "C:\path\to\file.lut"
 ```
 
+Reset gamma to an in-code identity ramp:
+
+```powershell
+cargo run -- reset
+```
+
 Watch Windows HDR state and apply/restore automatically:
 
 ```powershell
@@ -86,7 +92,6 @@ tests\fixtures\
 Current fixtures:
 
 ```text
-valid-linear.lut
 valid-xiaomi-27i-pro.lut
 invalid-too-small.lut
 ```
@@ -114,6 +119,7 @@ tests/
 ## Notes
 
 - Applying and watching HDR state are Windows-only.
+- `reset` uses an identity ramp generated in source code, not a fixture file.
 - `inspect` and LUT parsing are platform-neutral.
 - `watch` currently polls HDR state every 2 seconds.
 - Future tray/background behavior should reuse `src/app.rs` and `src/platform/`.

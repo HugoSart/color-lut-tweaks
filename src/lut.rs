@@ -13,6 +13,18 @@ pub struct GammaRamp {
 }
 
 impl GammaRamp {
+    pub fn identity() -> Self {
+        let mut values = [[0u16; ENTRIES]; CHANNELS];
+
+        for channel in &mut values {
+            for (index, value) in channel.iter_mut().enumerate() {
+                *value = (index as u32 * 257) as u16;
+            }
+        }
+
+        Self { values }
+    }
+
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let bytes = fs::read(path).map_err(|source| Error::Io {

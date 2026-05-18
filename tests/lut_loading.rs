@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use hdr_tweaks::lut::{Channel, GammaRamp, LUT_SIZE};
 
 #[test]
-fn loads_valid_linear_lut_fixture() {
-    let ramp = GammaRamp::from_file(fixture("valid-linear.lut")).unwrap();
+fn identity_ramp_is_generated_in_source_code() {
+    let ramp = GammaRamp::identity();
 
     assert_eq!(ramp.values()[0][0], 0);
     assert_eq!(ramp.values()[0][255], u16::MAX);

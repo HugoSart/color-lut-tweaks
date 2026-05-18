@@ -20,6 +20,10 @@ pub fn apply_lut(platform: &impl DisplayPlatform, path: impl AsRef<Path>) -> Res
     platform.apply_gamma_ramp(&ramp)
 }
 
+pub fn reset_gamma(platform: &impl DisplayPlatform) -> Result<()> {
+    platform.apply_gamma_ramp(&GammaRamp::identity())
+}
+
 pub fn watch_hdr(platform: &impl DisplayPlatform, path: impl AsRef<Path>) -> Result<()> {
     let ramp = GammaRamp::from_file(path)?;
     let original_ramp = platform.capture_gamma_ramp()?;

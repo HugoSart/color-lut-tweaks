@@ -1,5 +1,14 @@
 use std::process::Command;
 
+use hdr_tweaks::cli::{self, Command as CliCommand};
+
+#[test]
+fn reset_parses_as_command_not_path() {
+    let args = vec!["reset".to_string()];
+
+    assert!(matches!(cli::parse_command(&args), Ok(CliCommand::Reset)));
+}
+
 #[test]
 fn inspect_prints_lut_summary() {
     let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
