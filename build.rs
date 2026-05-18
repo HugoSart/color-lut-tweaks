@@ -55,7 +55,8 @@ fn copy_icon(manifest_dir: &Path, luts_destination_dir: &Path) {
     let profile_dir = luts_destination_dir
         .parent()
         .expect("luts destination should have a profile parent directory");
-    fs::copy(source, profile_dir.join("icon.ico")).expect("copy icon into target profile directory");
+    fs::copy(source, profile_dir.join("icon.ico"))
+        .expect("copy icon into target profile directory");
 }
 
 fn create_default_config(luts_destination_dir: &Path) {
