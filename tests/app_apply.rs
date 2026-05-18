@@ -28,7 +28,7 @@ fn apply_without_mode_does_not_check_display_mode() {
 fn apply_with_mode_checks_display_mode() {
     let platform = MockDisplayPlatform::default();
 
-    app::apply_tweaks(
+    let report = app::apply_tweaks(
         &platform,
         &TweakOptions {
             device: Some(0),
@@ -40,6 +40,56 @@ fn apply_with_mode_checks_display_mode() {
 
     assert_eq!(platform.hdr_checks.borrow().as_slice(), &[0]);
     assert_eq!(platform.applied.borrow().len(), 0);
+    assert!(report.is_empty());
+}
+
+#[test]
+fn apply_identity_lut_uses_generated_identity_ramp() {
+    let platform = MockDisplayPlatform::default();
+
+    app::apply_tweaks(
+        &platform,
+        &TweakOptions {
+            device: Some(0),
+            lut: Some(PathBuf::from("identity")),
+            mode: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        platform.applied.borrow().as_slice(),
+        &[(0, GammaRamp::identity())]
+    );
+}
+
+#[test]
+fn apply_tweak_list_applies_only_entries_matching_current_mode() {
+    let platform = MockDisplayPlatform::default();
+
+    let report = app::apply_tweak_list(
+        &platform,
+        &[
+            TweakOptions {
+                device: Some(0),
+                lut: Some(PathBuf::from("identity")),
+                mode: Some(ColorMode::Sdr),
+            },
+            TweakOptions {
+                device: Some(0),
+                lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
+                mode: Some(ColorMode::Hdr),
+            },
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(platform.hdr_checks.borrow().as_slice(), &[0, 0]);
+    assert_eq!(
+        platform.applied.borrow().as_slice(),
+        &[(0, GammaRamp::identity())]
+    );
+    assert_eq!(report.applied.len(), 1);
 }
 
 #[derive(Default)]

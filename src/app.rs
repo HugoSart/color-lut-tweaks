@@ -8,9 +8,19 @@ use crate::error::{Error, Result};
 use crate::lut::{Channel, GammaRamp, LUT_SIZE};
 use crate::platform::DisplayPlatform;
 
+pub const IDENTITY_LUT: &str = "identity";
+
+pub fn default_config_path() -> Result<PathBuf> {
+    let exe_path = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
+    Ok(exe_path.parent().map_or_else(
+        || PathBuf::from("identity-config.json"),
+        |path| path.join("identity-config.json"),
+    ))
+}
+
 pub fn inspect_lut(path: impl AsRef<Path>) -> Result<LutInspection> {
     let path = path.as_ref();
-    let ramp = GammaRamp::from_file(path)?;
+    let ramp = load_lut(path)?;
     Ok(LutInspection {
         path: path.display().to_string(),
         summaries: Channel::ALL.map(|channel| (channel, ramp.channel_summary(channel))),
@@ -18,8 +28,26 @@ pub fn inspect_lut(path: impl AsRef<Path>) -> Result<LutInspection> {
 }
 
 pub fn apply_lut(platform: &impl DisplayPlatform, path: impl AsRef<Path>) -> Result<()> {
-    let ramp = GammaRamp::from_file(path)?;
+    let ramp = load_lut(path)?;
     platform.apply_gamma_ramp(0, &ramp)
+}
+
+pub fn load_lut(path: impl AsRef<Path>) -> Result<GammaRamp> {
+    let path = path.as_ref();
+    if is_identity_lut(path) {
+        Ok(GammaRamp::identity())
+    } else {
+        GammaRamp::from_file(resolve_lut_path(path)?)
+    }
+}
+
+pub fn resolve_lut_path(path: impl AsRef<Path>) -> Result<PathBuf> {
+    let path = path.as_ref();
+    if is_named_lut(path) {
+        Ok(default_luts_path(path))
+    } else {
+        Ok(path.to_path_buf())
+    }
 }
 
 pub fn apply_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> Result<ApplyReport> {
@@ -27,7 +55,8 @@ pub fn apply_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
 
     if let Some(path) = &tweaks.lut {
         let device_indices = target_device_indices(platform, tweaks.device)?;
-        let ramp = GammaRamp::from_file(path)?;
+        let ramp = load_lut(path)?;
+        let mut applied_lut = false;
         for device_index in &device_indices {
             let mode_matches = if let Some(mode) = tweaks.mode {
                 mode.matches_hdr_enabled(platform.hdr_enabled(*device_index)?)
@@ -37,9 +66,25 @@ pub fn apply_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
 
             if mode_matches {
                 platform.apply_gamma_ramp(*device_index, &ramp)?;
+                applied_lut = true;
             }
         }
-        applied.push(AppliedTweak::Lut(path.display().to_string()));
+        if applied_lut {
+            applied.push(AppliedTweak::Lut(path.display().to_string()));
+        }
+    }
+
+    Ok(ApplyReport { applied })
+}
+
+pub fn apply_tweak_list(
+    platform: &impl DisplayPlatform,
+    tweaks: &[TweakOptions],
+) -> Result<ApplyReport> {
+    let mut applied = Vec::new();
+
+    for options in tweaks {
+        applied.extend(apply_tweaks(platform, options)?.applied);
     }
 
     Ok(ApplyReport { applied })
@@ -87,7 +132,7 @@ pub fn watch_mode(
     mode: ColorMode,
     path: impl AsRef<Path>,
 ) -> Result<()> {
-    let ramp = GammaRamp::from_file(path)?;
+    let ramp = load_lut(path)?;
     let original_ramps = device_indices
         .iter()
         .map(|device_index| Ok((*device_index, platform.capture_gamma_ramp(*device_index)?)))
@@ -131,6 +176,14 @@ pub fn watch_mode(
 }
 
 pub fn start_tweaks(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) -> Result<()> {
+    run_tweaks_until(platform, tweaks, || false)
+}
+
+pub fn run_tweaks_until(
+    platform: &impl DisplayPlatform,
+    tweaks: &[TweakOptions],
+    should_stop: impl Fn() -> bool,
+) -> Result<()> {
     let rules = start_rules(platform, tweaks)?;
     if rules.is_empty() {
         return Err(Error::InvalidArguments(
@@ -138,21 +191,66 @@ pub fn start_tweaks(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) ->
         ));
     }
 
-    let mut original_ramps = BTreeMap::new();
-    for device_index in start_device_indices(&rules) {
-        original_ramps.insert(device_index, platform.capture_gamma_ramp(device_index)?);
+    let mut runtime = TweakRuntime {
+        rules,
+        original_ramps: BTreeMap::new(),
+        active_rules: BTreeMap::new(),
+    };
+
+    runtime.capture_original_ramps(platform)?;
+    runtime.run_until(platform, should_stop)
+}
+
+struct TweakRuntime {
+    rules: Vec<StartRule>,
+    original_ramps: BTreeMap<usize, GammaRamp>,
+    active_rules: BTreeMap<usize, Option<usize>>,
+}
+
+impl TweakRuntime {
+    fn capture_original_ramps(&mut self, platform: &impl DisplayPlatform) -> Result<()> {
+        for device_index in start_device_indices(&self.rules) {
+            self.original_ramps
+                .insert(device_index, platform.capture_gamma_ramp(device_index)?);
+        }
+
+        Ok(())
     }
 
-    let mut active_rules = BTreeMap::<usize, Option<usize>>::new();
+    fn run_until(
+        &mut self,
+        platform: &impl DisplayPlatform,
+        should_stop: impl Fn() -> bool,
+    ) -> Result<()> {
+        let result = loop {
+            if should_stop() {
+                break Ok(());
+            }
 
-    loop {
-        for device_index in original_ramps.keys().copied().collect::<Vec<_>>() {
+            if let Err(err) = self.tick(platform) {
+                break Err(err);
+            }
+
+            sleep_poll_interval(&should_stop);
+        };
+
+        let restore_result = self.restore_original_ramps(platform);
+        match (result, restore_result) {
+            (Err(err), _) => Err(err),
+            (Ok(()), Err(err)) => Err(err),
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    }
+
+    fn tick(&mut self, platform: &impl DisplayPlatform) -> Result<()> {
+        for device_index in self.original_ramps.keys().copied().collect::<Vec<_>>() {
             let hdr_enabled = platform.hdr_enabled(device_index)?;
             let active_mode = ColorMode::from_hdr_enabled(hdr_enabled);
-            let desired_rule = rules
+            let desired_rule = self
+                .rules
                 .iter()
                 .position(|rule| rule.device_index == device_index && rule.mode == active_mode);
-            let active_rule = active_rules.get(&device_index).copied().flatten();
+            let active_rule = self.active_rules.get(&device_index).copied().flatten();
 
             if desired_rule == active_rule {
                 continue;
@@ -160,7 +258,7 @@ pub fn start_tweaks(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) ->
 
             match desired_rule {
                 Some(rule_index) => {
-                    let rule = &rules[rule_index];
+                    let rule = &self.rules[rule_index];
                     platform.apply_gamma_ramp(device_index, &rule.ramp)?;
                     println!(
                         "Device {device_index}: {} mode active; applied {}",
@@ -169,11 +267,12 @@ pub fn start_tweaks(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) ->
                     );
                 }
                 None => {
-                    let original_ramp = original_ramps.get(&device_index).ok_or_else(|| {
-                        Error::Platform(format!(
-                            "missing captured gamma ramp for device {device_index}"
-                        ))
-                    })?;
+                    let original_ramp =
+                        self.original_ramps.get(&device_index).ok_or_else(|| {
+                            Error::Platform(format!(
+                                "missing captured gamma ramp for device {device_index}"
+                            ))
+                        })?;
                     platform.apply_gamma_ramp(device_index, original_ramp)?;
                     println!(
                         "Device {device_index}: no tweak configured for {}; restored previous gamma ramp",
@@ -182,10 +281,28 @@ pub fn start_tweaks(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) ->
                 }
             }
 
-            active_rules.insert(device_index, desired_rule);
+            self.active_rules.insert(device_index, desired_rule);
         }
 
-        thread::sleep(Duration::from_secs(2));
+        Ok(())
+    }
+
+    fn restore_original_ramps(&self, platform: &impl DisplayPlatform) -> Result<()> {
+        for (device_index, ramp) in &self.original_ramps {
+            platform.apply_gamma_ramp(*device_index, ramp)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn sleep_poll_interval(should_stop: impl Fn() -> bool) {
+    let slice = Duration::from_millis(100);
+    for _ in 0..20 {
+        if should_stop() {
+            return;
+        }
+        thread::sleep(slice);
     }
 }
 
@@ -198,7 +315,7 @@ fn start_rules(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) -> Resu
                 "`start` config entry {position} needs a `lut` path"
             ))
         })?;
-        let ramp = GammaRamp::from_file(path)?;
+        let ramp = load_lut(path)?;
         let mode = options.mode.unwrap_or(ColorMode::Hdr);
 
         for device_index in target_device_indices(platform, options.device)? {
@@ -255,19 +372,32 @@ pub struct TweakOptions {
 
 impl TweakOptions {
     pub fn from_config_file(path: impl AsRef<Path>) -> Result<Self> {
+        let mut options = Self::many_from_config_file(path)?;
+        match options.len() {
+            1 => Ok(options.remove(0)),
+            _ => Err(Error::InvalidArguments(
+                "expected config with exactly one tweak entry".to_string(),
+            )),
+        }
+    }
+
+    pub fn many_from_config_file(path: impl AsRef<Path>) -> Result<Vec<Self>> {
         let path = path.as_ref();
         let json = fs::read_to_string(path).map_err(|source| Error::Io {
             path: Some(path.to_path_buf()),
             source,
         })?;
 
-        let mut options =
-            serde_json::from_str::<Self>(&json).map_err(|source| Error::ConfigJson {
+        let mut options = serde_json::from_str::<TweakConfig>(&json)
+            .map_err(|source| Error::ConfigJson {
                 path: path.to_path_buf(),
                 source,
-            })?;
+            })?
+            .into_options();
 
-        options.resolve_paths_relative_to(path);
+        for option in &mut options {
+            option.resolve_paths_relative_to(path);
+        }
 
         Ok(options)
     }
@@ -306,12 +436,54 @@ impl TweakOptions {
 
     fn resolve_paths_relative_to(&mut self, config_path: &Path) {
         if let Some(lut) = &self.lut
+            && !is_identity_lut(lut)
+            && !is_named_lut(lut)
             && lut.is_relative()
             && let Some(parent) = config_path.parent()
         {
             self.lut = Some(parent.join(lut));
         }
     }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum TweakConfig {
+    Single(TweakOptions),
+    Many(Vec<TweakOptions>),
+}
+
+impl TweakConfig {
+    fn into_options(self) -> Vec<TweakOptions> {
+        match self {
+            Self::Single(options) => vec![options],
+            Self::Many(options) => options,
+        }
+    }
+}
+
+fn is_identity_lut(path: &Path) -> bool {
+    path == Path::new(IDENTITY_LUT)
+}
+
+fn is_named_lut(path: &Path) -> bool {
+    let value = path.as_os_str().to_string_lossy();
+    !value.is_empty()
+        && !value.contains('/')
+        && !value.contains('\\')
+        && path.extension().is_none()
+        && !is_identity_lut(path)
+}
+
+fn default_luts_path(name: &Path) -> PathBuf {
+    default_luts_dir().join(name).with_extension("lut")
+}
+
+fn default_luts_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join("luts")))
+        .unwrap_or_else(|| PathBuf::from("luts"))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]

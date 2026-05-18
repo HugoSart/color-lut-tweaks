@@ -170,6 +170,51 @@ fn start_parses_config_equals_argument() {
 }
 
 #[test]
+fn tray_parses_config_argument() {
+    let args = vec![
+        "tray".to_string(),
+        "--config=tests/fixtures/start-config.json".to_string(),
+    ];
+
+    let Ok(CliCommand::Tray(StartOptions {
+        config: Some(config),
+    })) = cli::parse_command(&args)
+    else {
+        panic!("expected tray command with config path");
+    };
+
+    assert_eq!(
+        config,
+        std::path::PathBuf::from("tests/fixtures/start-config.json")
+    );
+}
+
+#[test]
+fn identity_lut_parses_as_reserved_lut_value() {
+    let args = vec![
+        "apply".to_string(),
+        "--device".to_string(),
+        "1".to_string(),
+        "--lut=identity".to_string(),
+    ];
+
+    let Ok(CliCommand::Apply(CliTweakOptions {
+        config: None,
+        tweaks:
+            TweakOptions {
+                device: Some(1),
+                lut: Some(path),
+                mode: None,
+            },
+    })) = cli::parse_command(&args)
+    else {
+        panic!("expected apply command with identity LUT value");
+    };
+
+    assert_eq!(path, std::path::PathBuf::from("identity"));
+}
+
+#[test]
 fn start_only_accepts_config_argument() {
     let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
         .arg("start")

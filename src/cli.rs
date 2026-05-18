@@ -10,6 +10,7 @@ pub enum Command {
     Reset(CliTweakOptions),
     Watch(CliTweakOptions),
     Start(StartOptions),
+    Tray(StartOptions),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -20,13 +21,27 @@ pub struct CliTweakOptions {
 
 impl CliTweakOptions {
     fn resolve(&self) -> Result<TweakOptions> {
-        let mut resolved = if let Some(path) = &self.config {
-            TweakOptions::from_config_file(path)?
-        } else {
-            TweakOptions::default()
-        };
+        let mut resolved = self.resolve_many()?;
+        match resolved.len() {
+            1 => Ok(resolved.remove(0)),
+            _ => Err(Error::InvalidArguments(
+                "this command needs exactly one tweak entry; pass `--lut` directly or use a single-entry config"
+                    .to_string(),
+            )),
+        }
+    }
 
-        resolved.merge_cli_overrides(&self.tweaks);
+    fn resolve_many(&self) -> Result<Vec<TweakOptions>> {
+        let mut resolved = self
+            .config
+            .as_ref()
+            .map(TweakOptions::many_from_config_file)
+            .transpose()?
+            .unwrap_or_else(|| vec![TweakOptions::default()]);
+
+        for options in &mut resolved {
+            options.merge_cli_overrides(&self.tweaks);
+        }
 
         Ok(resolved)
     }
@@ -48,20 +63,14 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             print!("{}", app::inspect_lut(path)?.format());
         }
         Command::Apply(options) => {
-            let tweaks = options.resolve()?;
-            let report = app::apply_tweaks(&platform, &tweaks)?;
+            let tweaks = options.resolve_many()?;
+            let report = app::apply_tweak_list(&platform, &tweaks)?;
             if report.is_empty() {
                 println!("No tweaks configured; nothing to apply");
             } else {
                 for applied in report.applied {
                     match applied {
-                        AppliedTweak::Lut(path) => match tweaks.mode {
-                            Some(mode) => println!(
-                                "Applied gamma ramp from {path} where mode is {}",
-                                mode.name()
-                            ),
-                            None => println!("Applied gamma ramp from {path}"),
-                        },
+                        AppliedTweak::Lut(path) => println!("Applied gamma ramp from {path}"),
                     }
                 }
             }
@@ -76,19 +85,30 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             }
         }
         Command::Watch(options) => {
-            let tweaks = options.resolve()?;
-            if let Some(path) = &tweaks.lut {
-                println!("Watching HDR state for {}", path.display());
-            } else {
-                println!("Watching HDR state with no LUT configured");
+            let tweaks = options.resolve_many()?;
+            match tweaks.as_slice() {
+                [tweak] => {
+                    if let Some(path) = &tweak.lut {
+                        println!("Watching HDR state for {}", path.display());
+                    } else {
+                        println!("Watching HDR state with no LUT configured");
+                    }
+                    app::watch_tweaks(&platform, tweak)?;
+                }
+                _ => {
+                    println!("Watching HDR state from {} configured tweaks", tweaks.len());
+                    app::start_tweaks(&platform, &tweaks)?;
+                }
             }
-            app::watch_tweaks(&platform, &tweaks)?;
         }
         Command::Start(options) => {
-            let config = options.config.unwrap_or(default_start_config_path()?);
+            let config = options.config.unwrap_or(app::default_config_path()?);
             let tweaks = TweakOptions::list_from_config_file(&config)?;
             println!("Starting from {}", config.display());
             app::start_tweaks(&platform, &tweaks)?;
+        }
+        Command::Tray(options) => {
+            crate::tray::run(options.config)?;
         }
     }
 
@@ -109,7 +129,10 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
         [command, rest @ ..] if command == "apply" => Ok(Command::Apply(parse_options(rest)?)),
         [command, rest @ ..] if command == "watch" => Ok(Command::Watch(parse_options(rest)?)),
         [command, rest @ ..] if command == "start" => {
-            Ok(Command::Start(parse_start_options(rest)?))
+            Ok(Command::Start(parse_start_options("start", rest)?))
+        }
+        [command, rest @ ..] if command == "tray" => {
+            Ok(Command::Tray(parse_start_options("tray", rest)?))
         }
         [first, ..] if first.starts_with('-') => Ok(Command::Watch(parse_options(args)?)),
         _ => Err(Error::InvalidArguments(expected_usage())),
@@ -118,22 +141,25 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
 
 pub fn print_usage() {
     eprintln!("Usage:");
-    eprintln!("  color-lut-tweaks --config=<config.json>");
-    eprintln!("  color-lut-tweaks --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut>");
+    eprintln!("  color-lut-tweaks --config=<identity-config.json>");
     eprintln!(
-        "  color-lut-tweaks --config=<config.json> --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut>"
+        "  color-lut-tweaks --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut|identity>"
     );
     eprintln!(
-        "  color-lut-tweaks inspect [--config <config.json>] [--device <index>] --lut <path-to-1536-byte-lut>"
+        "  color-lut-tweaks --config=<identity-config.json> --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut|identity>"
     );
     eprintln!(
-        "  color-lut-tweaks apply [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
+        "  color-lut-tweaks inspect [--config <identity-config.json>] [--device <index>] --lut <path-to-1536-byte-lut|identity>"
+    );
+    eprintln!(
+        "  color-lut-tweaks apply [--config <identity-config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut|identity>]"
     );
     eprintln!("  color-lut-tweaks reset [--device <index>]");
     eprintln!(
-        "  color-lut-tweaks watch [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
+        "  color-lut-tweaks watch [--config <identity-config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut|identity>]"
     );
-    eprintln!("  color-lut-tweaks start [--config <config.json>]");
+    eprintln!("  color-lut-tweaks start [--config <identity-config.json>]");
+    eprintln!("  color-lut-tweaks tray [--config <identity-config.json>]");
 }
 
 fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
@@ -201,7 +227,7 @@ fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
     Ok(options)
 }
 
-fn parse_start_options(args: &[String]) -> Result<StartOptions> {
+fn parse_start_options(command: &str, args: &[String]) -> Result<StartOptions> {
     let mut options = StartOptions::default();
     let mut index = 0;
 
@@ -225,9 +251,9 @@ fn parse_start_options(args: &[String]) -> Result<StartOptions> {
                 return Err(Error::InvalidArguments(format!("unknown option `{value}`")));
             }
             _ => {
-                return Err(Error::InvalidArguments(
-                    "`start` accepts only `--config <config.json>`".to_string(),
-                ));
+                return Err(Error::InvalidArguments(format!(
+                    "`{command}` accepts only `--config <identity-config.json>`"
+                )));
             }
         }
     }
@@ -328,20 +354,12 @@ fn expected_value(flag: &str) -> Error {
 fn require_lut<'a>(tweaks: &'a TweakOptions, command: &str) -> Result<&'a PathBuf> {
     tweaks.lut.as_ref().ok_or_else(|| {
         Error::InvalidArguments(format!(
-            "`{command}` needs a LUT path; pass `--lut <path-to-1536-byte-lut>`"
+            "`{command}` needs a LUT path; pass `--lut <path-to-1536-byte-lut|identity>`"
         ))
     })
 }
 
-fn default_start_config_path() -> Result<PathBuf> {
-    let exe_path = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
-    Ok(exe_path.parent().map_or_else(
-        || PathBuf::from("config.json"),
-        |path| path.join("config.json"),
-    ))
-}
-
 fn expected_usage() -> String {
-    "expected root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, `reset [--device <index>]`, or `start [--config <path>]`"
+    "expected root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, `reset [--device <index>]`, `start [--config <path>]`, or `tray [--config <path>]`"
         .to_string()
 }
