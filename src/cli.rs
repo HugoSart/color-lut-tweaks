@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::app::{self, AppliedTweak, TweakOptions};
+use crate::app::{self, AppliedTweak, ColorMode, TweakOptions};
 use crate::config::ConfigFile;
 use crate::error::{Error, Result};
 use crate::platform::SystemDisplayPlatform;
@@ -32,6 +32,9 @@ impl CliTweakOptions {
         if self.tweaks.device.is_some() {
             resolved.device = self.tweaks.device;
         }
+        if self.tweaks.mode.is_some() {
+            resolved.mode = self.tweaks.mode;
+        }
 
         Ok(resolved)
     }
@@ -55,7 +58,13 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             } else {
                 for applied in report.applied {
                     match applied {
-                        AppliedTweak::Lut(path) => println!("Applied gamma ramp from {path}"),
+                        AppliedTweak::Lut(path) => match tweaks.mode {
+                            Some(mode) => println!(
+                                "Applied gamma ramp from {path} where mode is {}",
+                                mode.name()
+                            ),
+                            None => println!("Applied gamma ramp from {path}"),
+                        },
                     }
                 }
             }
@@ -104,17 +113,19 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
 pub fn print_usage() {
     eprintln!("Usage:");
     eprintln!("  hdr-tweaks --config=<config.json>");
-    eprintln!("  hdr-tweaks --device=<index> --lut=<path-to-1536-byte-lut>");
-    eprintln!("  hdr-tweaks --config=<config.json> --device=<index> --lut=<path-to-1536-byte-lut>");
+    eprintln!("  hdr-tweaks --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut>");
+    eprintln!(
+        "  hdr-tweaks --config=<config.json> --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut>"
+    );
     eprintln!(
         "  hdr-tweaks inspect [--config <config.json>] [--device <index>] --lut <path-to-1536-byte-lut>"
     );
     eprintln!(
-        "  hdr-tweaks apply [--config <config.json>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
+        "  hdr-tweaks apply [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
     );
     eprintln!("  hdr-tweaks reset [--device <index>]");
     eprintln!(
-        "  hdr-tweaks watch [--config <config.json>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
+        "  hdr-tweaks watch [--config <config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut>]"
     );
 }
 
@@ -139,6 +150,11 @@ fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
             index += 1;
             continue;
         }
+        if let Some(mode) = value.strip_prefix("--mode=") {
+            set_mode(&mut options, mode)?;
+            index += 1;
+            continue;
+        }
         match value {
             "--config" => {
                 let path = args
@@ -157,6 +173,13 @@ fn parse_options(args: &[String]) -> Result<CliTweakOptions> {
                     .get(index + 1)
                     .ok_or_else(|| expected_value("--device"))?;
                 set_device(&mut options, device)?;
+                index += 2;
+            }
+            "--mode" => {
+                let mode = args
+                    .get(index + 1)
+                    .ok_or_else(|| expected_value("--mode"))?;
+                set_mode(&mut options, mode)?;
                 index += 2;
             }
             value if value.starts_with('-') => {
@@ -220,6 +243,29 @@ fn set_device(options: &mut CliTweakOptions, device: impl AsRef<str>) -> Result<
     Ok(())
 }
 
+fn set_mode(options: &mut CliTweakOptions, mode: impl AsRef<str>) -> Result<()> {
+    let mode = mode.as_ref();
+    if mode.is_empty() {
+        return Err(expected_value("--mode"));
+    }
+    if options.tweaks.mode.is_some() {
+        return Err(Error::InvalidArguments(
+            "`--mode` can only be provided once".to_string(),
+        ));
+    }
+
+    options.tweaks.mode = Some(match mode {
+        "hdr" => ColorMode::Hdr,
+        "sdr" => ColorMode::Sdr,
+        _ => {
+            return Err(Error::InvalidArguments(format!(
+                "`--mode` must be `hdr` or `sdr`, got `{mode}`"
+            )));
+        }
+    });
+    Ok(())
+}
+
 fn expected_value(flag: &str) -> Error {
     Error::InvalidArguments(format!("expected a path after `{flag}`"))
 }
@@ -233,6 +279,6 @@ fn require_lut<'a>(tweaks: &'a TweakOptions, command: &str) -> Result<&'a PathBu
 }
 
 fn expected_usage() -> String {
-    "expected root options `--config=<path>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, or `reset [--device <index>]`"
+    "expected root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, or `reset [--device <index>]`"
         .to_string()
 }

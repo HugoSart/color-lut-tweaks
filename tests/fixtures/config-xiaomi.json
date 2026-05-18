@@ -1,4 +1,5 @@
 {
   "device": 0,
+  "mode": "hdr",
   "lut": "valid-xiaomi-27i-pro.lut"
 }

@@ -27,7 +27,15 @@ pub fn apply_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
         let device_indices = target_device_indices(platform, tweaks.device)?;
         let ramp = GammaRamp::from_file(path)?;
         for device_index in &device_indices {
-            platform.apply_gamma_ramp(*device_index, &ramp)?;
+            let mode_matches = if let Some(mode) = tweaks.mode {
+                mode.matches_hdr_enabled(platform.hdr_enabled(*device_index)?)
+            } else {
+                true
+            };
+
+            if mode_matches {
+                platform.apply_gamma_ramp(*device_index, &ramp)?;
+            }
         }
         applied.push(AppliedTweak::Lut(path.display().to_string()));
     }
@@ -47,7 +55,12 @@ pub fn watch_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
     let device_indices = target_device_indices(platform, tweaks.device)?;
 
     if let Some(path) = &tweaks.lut {
-        watch_hdr(platform, &device_indices, path)
+        watch_mode(
+            platform,
+            &device_indices,
+            tweaks.mode.unwrap_or(ColorMode::Hdr),
+            path,
+        )
     } else {
         let mut previous_states = vec![None; device_indices.len()];
         loop {
@@ -66,9 +79,10 @@ pub fn watch_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
     }
 }
 
-pub fn watch_hdr(
+pub fn watch_mode(
     platform: &impl DisplayPlatform,
     device_indices: &[usize],
+    mode: ColorMode,
     path: impl AsRef<Path>,
 ) -> Result<()> {
     let ramp = GammaRamp::from_file(path)?;
@@ -82,25 +96,28 @@ pub fn watch_hdr(
     loop {
         for (position, device_index) in device_indices.iter().enumerate() {
             let hdr_enabled = platform.hdr_enabled(*device_index)?;
+            let mode_matches = mode.matches_hdr_enabled(hdr_enabled);
 
-            if hdr_enabled && !applied[position] {
+            if mode_matches && !applied[position] {
                 platform.apply_gamma_ramp(*device_index, &ramp)?;
                 applied[position] = true;
-                println!("Device {device_index}: HDR enabled; applied LUT");
-            } else if !hdr_enabled && applied[position] {
+                println!(
+                    "Device {device_index}: {} mode active; applied LUT",
+                    mode.name()
+                );
+            } else if !mode_matches && applied[position] {
                 let (_, original_ramp) = &original_ramps[position];
                 platform.apply_gamma_ramp(*device_index, original_ramp)?;
                 applied[position] = false;
-                println!("Device {device_index}: HDR disabled; restored previous gamma ramp");
+                println!(
+                    "Device {device_index}: {} mode inactive; restored previous gamma ramp",
+                    mode.name()
+                );
             } else if previous_hdr_states[position] != Some(hdr_enabled) {
                 println!(
-                    "Device {device_index}: HDR {}; {}",
+                    "Device {device_index}: HDR {}; waiting for {} mode",
                     if hdr_enabled { "enabled" } else { "disabled" },
-                    if applied[position] {
-                        "LUT already applied"
-                    } else {
-                        "waiting"
-                    }
+                    mode.name()
                 );
             }
 
@@ -126,6 +143,30 @@ fn target_device_indices(
 pub struct TweakOptions {
     pub device: Option<usize>,
     pub lut: Option<PathBuf>,
+    pub mode: Option<ColorMode>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ColorMode {
+    Hdr,
+    Sdr,
+}
+
+impl ColorMode {
+    pub fn matches_hdr_enabled(self, hdr_enabled: bool) -> bool {
+        match self {
+            Self::Hdr => hdr_enabled,
+            Self::Sdr => !hdr_enabled,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Hdr => "HDR",
+            Self::Sdr => "SDR",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use hdr_tweaks::app::TweakOptions;
+use hdr_tweaks::app::{ColorMode, TweakOptions};
 use hdr_tweaks::cli::{self, CliTweakOptions, Command as CliCommand};
 
 #[test]
@@ -25,10 +25,12 @@ fn lut_path_parses_as_optional_lut_argument() {
 
     let Ok(CliCommand::Apply(CliTweakOptions {
         config: None,
-        tweaks: TweakOptions {
-            device: Some(1),
-            lut: Some(path),
-        },
+        tweaks:
+            TweakOptions {
+                device: Some(1),
+                lut: Some(path),
+                mode: None,
+            },
     })) = cli::parse_command(&args)
     else {
         panic!("expected apply command with optional LUT path");
@@ -46,10 +48,12 @@ fn root_lut_equals_argument_parses_as_watch_defaults() {
 
     let Ok(CliCommand::Watch(CliTweakOptions {
         config: None,
-        tweaks: TweakOptions {
-            device: None,
-            lut: Some(path),
-        },
+        tweaks:
+            TweakOptions {
+                device: None,
+                lut: Some(path),
+                mode: None,
+            },
     })) = cli::parse_command(&args)
     else {
         panic!("expected root lut option to run watch mode");
@@ -67,10 +71,12 @@ fn root_config_equals_argument_parses_as_watch_defaults() {
 
     let Ok(CliCommand::Watch(CliTweakOptions {
         config: Some(config),
-        tweaks: TweakOptions {
-            device: None,
-            lut: None,
-        },
+        tweaks:
+            TweakOptions {
+                device: None,
+                lut: None,
+                mode: None,
+            },
     })) = cli::parse_command(&args)
     else {
         panic!("expected root config option to run watch mode");
@@ -92,10 +98,12 @@ fn root_config_and_lut_equals_arguments_parse_as_watch_with_override() {
 
     let Ok(CliCommand::Watch(CliTweakOptions {
         config: Some(config),
-        tweaks: TweakOptions {
-            device: Some(1),
-            lut: Some(path),
-        },
+        tweaks:
+            TweakOptions {
+                device: Some(1),
+                lut: Some(path),
+                mode: None,
+            },
     })) = cli::parse_command(&args)
     else {
         panic!("expected root config and lut options to run watch mode");
@@ -121,10 +129,12 @@ fn config_path_parses_as_optional_argument() {
 
     let Ok(CliCommand::Apply(CliTweakOptions {
         config: Some(config),
-        tweaks: TweakOptions {
-            device: None,
-            lut: None,
-        },
+        tweaks:
+            TweakOptions {
+                device: None,
+                lut: None,
+                mode: None,
+            },
     })) = cli::parse_command(&args)
     else {
         panic!("expected apply command with config path");
@@ -142,14 +152,59 @@ fn reset_parses_device_option() {
 
     let Ok(CliCommand::Reset(CliTweakOptions {
         config: None,
-        tweaks: TweakOptions {
-            device: Some(1),
-            lut: None,
-        },
+        tweaks:
+            TweakOptions {
+                device: Some(1),
+                lut: None,
+                mode: None,
+            },
     })) = cli::parse_command(&args)
     else {
         panic!("expected reset command with device option");
     };
+}
+
+#[test]
+fn mode_parses_as_shared_option() {
+    let args = vec![
+        "watch".to_string(),
+        "--mode=sdr".to_string(),
+        "--lut".to_string(),
+        "tests/fixtures/valid-xiaomi-27i-pro.lut".to_string(),
+    ];
+
+    let Ok(CliCommand::Watch(CliTweakOptions {
+        config: None,
+        tweaks:
+            TweakOptions {
+                device: None,
+                lut: Some(path),
+                mode: Some(ColorMode::Sdr),
+            },
+    })) = cli::parse_command(&args)
+    else {
+        panic!("expected watch command with SDR mode");
+    };
+
+    assert_eq!(
+        path,
+        std::path::PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")
+    );
+}
+
+#[test]
+fn mode_must_be_hdr_or_sdr() {
+    let output = Command::new(env!("CARGO_BIN_EXE_hdr-tweaks"))
+        .arg("apply")
+        .arg("--mode")
+        .arg("auto")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("`--mode` must be `hdr` or `sdr`"));
 }
 
 #[test]

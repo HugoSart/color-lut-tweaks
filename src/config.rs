@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::app::TweakOptions;
+use crate::app::{ColorMode, TweakOptions};
 use crate::error::{Error, Result};
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -12,6 +12,8 @@ pub struct ConfigFile {
     pub device: Option<usize>,
     #[serde(default)]
     pub lut: Option<PathBuf>,
+    #[serde(default)]
+    pub mode: Option<ColorMode>,
 }
 
 impl ConfigFile {
@@ -42,6 +44,7 @@ impl ConfigFile {
         TweakOptions {
             device: self.device,
             lut: self.lut,
+            mode: self.mode,
         }
     }
 }

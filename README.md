@@ -31,14 +31,15 @@ Apply a LUT immediately:
 
 ```powershell
 cargo run -- apply --device 0 --lut "C:\path\to\file.lut"
+cargo run -- apply --mode hdr --device 0 --lut "C:\path\to\file.lut"
 ```
 
 Run in watch mode using root-level options:
 
 ```powershell
 .\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json
-.\target\debug\hdr-tweaks.exe --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
-.\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
+.\target\debug\hdr-tweaks.exe --mode=hdr --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
+.\target\debug\hdr-tweaks.exe --config=.\hdr-tweaks.json --mode=sdr --device=0 --lut=.\tests\fixtures\xiaomi-27i-pro-eotf-correction.lut
 ```
 
 Use a config file for defaults with an explicit command:
@@ -52,14 +53,15 @@ Example config:
 ```json
 {
   "device": 0,
+  "mode": "hdr",
   "lut": "C:\\path\\to\\file.lut"
 }
 ```
 
-`device` is a zero-based active display index. If omitted, apply/reset/watch target all active devices. Relative paths in the config are resolved relative to the config file. Explicit CLI options override config defaults:
+`device` is a zero-based active display index. If omitted, apply/reset/watch target all active devices. `mode` is either `hdr` or `sdr`; for `apply`, mode is only checked when specified. For `watch`, omitted mode defaults to `hdr`. Relative paths in the config are resolved relative to the config file. Explicit CLI options override config defaults:
 
 ```powershell
-cargo run -- apply --config ".\hdr-tweaks.json" --device 1 --lut "C:\other\file.lut"
+cargo run -- apply --config ".\hdr-tweaks.json" --mode sdr --device 1 --lut "C:\other\file.lut"
 ```
 
 Run apply without a LUT:
@@ -81,12 +83,13 @@ Watch Windows HDR state and apply/restore automatically:
 cargo run -- watch --config ".\hdr-tweaks.json"
 ```
 
-`watch` captures the current gamma ramp on startup, polls HDR state, applies the LUT when HDR is enabled, and restores the captured ramp when HDR is disabled.
+`watch` captures the current gamma ramp on startup, polls HDR state, applies the LUT when the selected mode matches, and restores the captured ramp when the selected mode no longer matches.
 
 You can also pass the LUT directly:
 
 ```powershell
-cargo run -- watch --device 0 --lut "C:\path\to\file.lut"
+cargo run -- watch --mode hdr --device 0 --lut "C:\path\to\file.lut"
+cargo run -- watch --mode sdr --device 0 --lut "C:\path\to\file.lut"
 ```
 
 ## Build
@@ -163,7 +166,10 @@ tests/
 ## Notes
 
 - Applying and watching HDR state are Windows-only.
-- Root-level `--config`, `--device`, and `--lut` run the default watch behavior.
+- Root-level `--config`, `--mode`, `--device`, and `--lut` run the default watch behavior.
+- `apply` ignores display mode unless `--mode` is specified.
+- `reset` always ignores display mode.
+- `watch` defaults to `--mode hdr` when mode is omitted.
 - When `--device` is omitted, apply/reset/watch target all active devices.
 - `reset` uses an identity ramp generated in source code, not a fixture file.
 - `inspect` and LUT parsing are platform-neutral.
