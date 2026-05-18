@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use crate::app::{self, AppliedTweak, ColorMode, TweakOptions};
-use crate::config::ConfigFile;
 use crate::error::{Error, Result};
 use crate::platform::SystemDisplayPlatform;
 
@@ -21,20 +20,12 @@ pub struct CliTweakOptions {
 impl CliTweakOptions {
     fn resolve(&self) -> Result<TweakOptions> {
         let mut resolved = if let Some(path) = &self.config {
-            ConfigFile::from_file(path)?.into_tweaks()
+            TweakOptions::from_config_file(path)?
         } else {
             TweakOptions::default()
         };
 
-        if self.tweaks.lut.is_some() {
-            resolved.lut = self.tweaks.lut.clone();
-        }
-        if self.tweaks.device.is_some() {
-            resolved.device = self.tweaks.device;
-        }
-        if self.tweaks.mode.is_some() {
-            resolved.mode = self.tweaks.mode;
-        }
+        resolved.merge_cli_overrides(&self.tweaks);
 
         Ok(resolved)
     }

@@ -1,8 +1,9 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::lut::{Channel, GammaRamp, LUT_SIZE};
 use crate::platform::DisplayPlatform;
 
@@ -139,11 +140,51 @@ fn target_device_indices(
     Ok((0..platform.active_device_count()?).collect())
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct TweakOptions {
+    #[serde(default)]
     pub device: Option<usize>,
+    #[serde(default)]
     pub lut: Option<PathBuf>,
+    #[serde(default)]
     pub mode: Option<ColorMode>,
+}
+
+impl TweakOptions {
+    pub fn from_config_file(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let json = fs::read_to_string(path).map_err(|source| Error::Io {
+            path: Some(path.to_path_buf()),
+            source,
+        })?;
+
+        let mut options =
+            serde_json::from_str::<Self>(&json).map_err(|source| Error::ConfigJson {
+                path: path.to_path_buf(),
+                source,
+            })?;
+
+        if let Some(lut) = &options.lut
+            && lut.is_relative()
+            && let Some(parent) = path.parent()
+        {
+            options.lut = Some(parent.join(lut));
+        }
+
+        Ok(options)
+    }
+
+    pub fn merge_cli_overrides(&mut self, overrides: &Self) {
+        if overrides.device.is_some() {
+            self.device = overrides.device;
+        }
+        if overrides.lut.is_some() {
+            self.lut = overrides.lut.clone();
+        }
+        if overrides.mode.is_some() {
+            self.mode = overrides.mode;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
