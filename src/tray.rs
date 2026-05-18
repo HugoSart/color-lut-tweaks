@@ -34,21 +34,21 @@ mod windows_tray {
     const NIF_TIP: u32 = 0x00000004;
 
     const MF_STRING: u32 = 0x00000000;
-    const MF_GRAYED: u32 = 0x00000001;
+    const MF_CHECKED: u32 = 0x00000008;
     const MF_SEPARATOR: u32 = 0x00000800;
     const TPM_RETURNCMD: u32 = 0x00000100;
     const TPM_RIGHTBUTTON: u32 = 0x00000002;
 
     const MB_ICONERROR: u32 = 0x00000010;
-    const MB_ICONINFORMATION: u32 = 0x00000040;
     const IMAGE_ICON: u32 = 1;
     const IDI_APPLICATION: usize = 32512;
     const LR_LOADFROMFILE: u32 = 0x00000010;
     const LR_DEFAULTSIZE: u32 = 0x00000040;
 
     const TRAY_UID: u32 = 1;
-    const MENU_RESET: usize = 1001;
-    const MENU_QUIT: usize = 1002;
+    const MENU_ENABLED: usize = 1001;
+    const MENU_RELOAD: usize = 1002;
+    const MENU_QUIT: usize = 1003;
 
     pub fn launch(config: Option<PathBuf>) -> Result<()> {
         let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
@@ -72,19 +72,15 @@ mod windows_tray {
 
     pub fn run(config: Option<PathBuf>) -> Result<()> {
         let config = config.unwrap_or(app::default_config_path()?);
-        let tweaks = TweakOptions::list_from_config_file(&config)?;
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let (tx, rx) = mpsc::channel();
 
         unsafe {
             let hwnd = create_window()?;
-            let worker = start_worker(hwnd, tweaks, shutdown.clone(), tx);
-            let state = Box::new(TrayState {
-                shutdown,
-                worker: Some(worker),
-                worker_result: rx,
+            let mut state = Box::new(TrayState {
+                enabled: true,
+                worker: None,
                 config,
             });
+            state.start_worker(hwnd)?;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
             add_tray_icon(hwnd)?;
             message_loop()?;
@@ -94,28 +90,106 @@ mod windows_tray {
     }
 
     struct TrayState {
-        shutdown: Arc<AtomicBool>,
-        worker: Option<JoinHandle<()>>,
-        worker_result: mpsc::Receiver<Result<()>>,
+        enabled: bool,
+        worker: Option<RuntimeWorker>,
         config: PathBuf,
     }
 
-    fn start_worker(
-        hwnd: Hwnd,
-        tweaks: Vec<TweakOptions>,
+    struct RuntimeWorker {
         shutdown: Arc<AtomicBool>,
-        tx: mpsc::Sender<Result<()>>,
-    ) -> JoinHandle<()> {
-        let hwnd_value = hwnd as isize;
-        thread::spawn(move || {
-            let platform = SystemDisplayPlatform::new();
-            let result =
-                app::run_tweaks_until(&platform, &tweaks, || shutdown.load(Ordering::Relaxed));
-            let _ = tx.send(result);
-            unsafe {
-                PostMessageW(hwnd_value as Hwnd, WM_WORKER_DONE, 0, 0);
+        handle: Option<JoinHandle<()>>,
+        result: mpsc::Receiver<Result<()>>,
+    }
+
+    impl TrayState {
+        fn start_worker(&mut self, hwnd: Hwnd) -> Result<()> {
+            let tweaks = TweakOptions::list_from_config_file(&self.config)?;
+            let shutdown = Arc::new(AtomicBool::new(false));
+            let (tx, rx) = mpsc::channel();
+            let hwnd_value = hwnd as isize;
+            let thread_shutdown = shutdown.clone();
+            let handle = thread::spawn(move || {
+                let platform = SystemDisplayPlatform::new();
+                let result = app::run_tweaks_until(&platform, &tweaks, || {
+                    thread_shutdown.load(Ordering::Relaxed)
+                });
+                let _ = tx.send(result);
+                unsafe {
+                    PostMessageW(hwnd_value as Hwnd, WM_WORKER_DONE, 0, 0);
+                }
+            });
+
+            self.worker = Some(RuntimeWorker {
+                shutdown,
+                handle: Some(handle),
+                result: rx,
+            });
+
+            Ok(())
+        }
+
+        fn stop_worker(&mut self) -> Result<()> {
+            let Some(mut worker) = self.worker.take() else {
+                return Ok(());
+            };
+
+            worker.shutdown.store(true, Ordering::Relaxed);
+            if let Some(handle) = worker.handle.take() {
+                let _ = handle.join();
             }
-        })
+
+            match worker.result.try_recv() {
+                Ok(result) => result,
+                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => Ok(()),
+            }
+        }
+
+        fn toggle_enabled(&mut self, hwnd: Hwnd) -> Result<()> {
+            if self.enabled {
+                self.stop_worker()?;
+                self.enabled = false;
+            } else {
+                self.start_worker(hwnd)?;
+                self.enabled = true;
+            }
+
+            Ok(())
+        }
+
+        fn reload(&mut self, hwnd: Hwnd) -> Result<()> {
+            self.stop_worker()?;
+            if self.enabled {
+                if let Err(err) = self.start_worker(hwnd) {
+                    self.enabled = false;
+                    return Err(err);
+                }
+            }
+
+            Ok(())
+        }
+
+        fn handle_worker_done(&mut self) -> Result<()> {
+            let Some(mut worker) = self.worker.take() else {
+                return Ok(());
+            };
+
+            let result = match worker.result.try_recv() {
+                Ok(result) => result,
+                Err(mpsc::TryRecvError::Empty) => {
+                    self.worker = Some(worker);
+                    return Ok(());
+                }
+                Err(mpsc::TryRecvError::Disconnected) => Err(Error::platform(
+                    "the background runtime stopped unexpectedly",
+                )),
+            };
+
+            if let Some(handle) = worker.handle.take() {
+                let _ = handle.join();
+            }
+            self.enabled = false;
+            result
+        }
     }
 
     unsafe fn create_window() -> Result<Hwnd> {
@@ -222,19 +296,21 @@ mod windows_tray {
             return;
         }
 
-        let status = if let Some(state) = unsafe { state(hwnd) } {
-            format!("Running: {}", state.config.display())
-        } else {
-            "Running".to_string()
-        };
-
-        let status = wide(&status);
-        let reset = wide("Reset gamma");
+        let enabled = wide("Enabled");
+        let reload = wide("Reload");
         let quit = wide("Quit");
+        let enabled_flags = if unsafe { state(hwnd) }
+            .map(|state| state.enabled)
+            .unwrap_or(false)
+        {
+            MF_STRING | MF_CHECKED
+        } else {
+            MF_STRING
+        };
         unsafe {
-            AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, status.as_ptr());
+            AppendMenuW(menu, enabled_flags, MENU_ENABLED, enabled.as_ptr());
+            AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-            AppendMenuW(menu, MF_STRING, MENU_RESET, reset.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
         }
 
@@ -259,11 +335,18 @@ mod windows_tray {
         }
 
         match command as usize {
-            MENU_RESET => unsafe {
-                if let Err(err) = reset_gamma() {
+            MENU_ENABLED => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = state.toggle_enabled(hwnd)
+                {
                     show_error(hwnd, &err.to_string());
-                } else {
-                    show_info(hwnd, "Gamma ramp reset to identity on all devices.");
+                }
+            },
+            MENU_RELOAD => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = state.reload(hwnd)
+                {
+                    show_error(hwnd, &err.to_string());
                 }
             },
             MENU_QUIT => unsafe {
@@ -273,26 +356,12 @@ mod windows_tray {
         }
     }
 
-    fn reset_gamma() -> Result<()> {
-        let platform = SystemDisplayPlatform::new();
-        app::reset_gamma(&platform, None)
-    }
-
     unsafe fn handle_worker_done(hwnd: Hwnd) {
         if let Some(state) = unsafe { state(hwnd) } {
-            match state.worker_result.try_recv() {
-                Ok(Ok(())) => unsafe {
-                    DestroyWindow(hwnd);
-                },
-                Ok(Err(err)) => unsafe {
+            if let Err(err) = state.handle_worker_done() {
+                unsafe {
                     show_error(hwnd, &err.to_string());
-                    DestroyWindow(hwnd);
-                },
-                Err(mpsc::TryRecvError::Empty) => {}
-                Err(mpsc::TryRecvError::Disconnected) => unsafe {
-                    show_error(hwnd, "The background runtime stopped unexpectedly.");
-                    DestroyWindow(hwnd);
-                },
+                }
             }
         }
     }
@@ -311,10 +380,7 @@ mod windows_tray {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         }
         let mut state = unsafe { Box::from_raw(state_ptr) };
-        state.shutdown.store(true, Ordering::Relaxed);
-        if let Some(worker) = state.worker.take() {
-            let _ = worker.join();
-        }
+        let _ = state.stop_worker();
     }
 
     unsafe fn add_tray_icon(hwnd: Hwnd) -> Result<()> {
@@ -388,14 +454,6 @@ mod windows_tray {
         let message = wide(message);
         unsafe {
             MessageBoxW(hwnd, message.as_ptr(), title.as_ptr(), MB_ICONERROR);
-        }
-    }
-
-    unsafe fn show_info(hwnd: Hwnd, message: &str) {
-        let title = wide(APP_NAME);
-        let message = wide(message);
-        unsafe {
-            MessageBoxW(hwnd, message.as_ptr(), title.as_ptr(), MB_ICONINFORMATION);
         }
     }
 
