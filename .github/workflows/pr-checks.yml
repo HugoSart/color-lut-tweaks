@@ -1,10 +1,12 @@
 name: PR Checks
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
-      - release-please**
+      - main
+      - "release-please*"
 
 permissions:
   contents: read
