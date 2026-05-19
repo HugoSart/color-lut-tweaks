@@ -34,7 +34,14 @@ and a custom LUT when you are in HDR:
   {
     "device": 0,
     "mode": "hdr",
-    "lut": "./path-to-my-lut.lut"
+    "lut": "./path-to-my-lut.lut",
+    "adjust": {
+      "contrast": 1.05,
+      "brightness": 0.0,
+      "gamma": 1.0,
+      "gain": [1.0, 1.0, 1.0],
+      "offset": [0.0, 0.0, 0.0]
+    }
   }
 ]
 ```
@@ -61,6 +68,9 @@ OBS1: If you do not specify file extension or a path like string, the tool will 
 <br>OBS3: The `lut` field accepts raw Windows `.lut` files and `.cube` files. `LUT_1D_SIZE` `.cube` files are converted
 directly into a Windows gamma ramp. `LUT_3D_SIZE` `.cube` files are approximated by sampling the grayscale axis because
 Windows `SetDeviceGammaRamp` cannot apply a true 3D LUT.
+<br>OBS4: The optional `adjust` block is applied after loading the LUT or `.cube`, before sending the gamma ramp to
+Windows. Omitted values default to neutral values. The order is brightness, contrast around `0.5`, gamma correction,
+then per-channel gain and offset.
 
 ## Running
 After having your project build and configuration in place, run the executable. It will start running in the background

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use color_lut_tweaks::Result;
-use color_lut_tweaks::app::{self, ColorMode, RuntimeOptions, TweakOptions};
+use color_lut_tweaks::app::{self, AdjustOptions, ColorMode, RuntimeOptions, TweakOptions};
 use color_lut_tweaks::lut::GammaRamp;
 use color_lut_tweaks::platform::DisplayPlatform;
 
@@ -16,11 +16,13 @@ fn start_config_loads_tweak_options_list() {
                 device: Some(0),
                 mode: Some(ColorMode::Hdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
+                adjust: None,
             },
             TweakOptions {
                 device: Some(0),
                 mode: Some(ColorMode::Sdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
+                adjust: None,
             },
         ]
     );
@@ -57,11 +59,13 @@ fn identity_lut_in_config_is_not_resolved_as_relative_path() {
                 device: Some(0),
                 mode: Some(ColorMode::Hdr),
                 lut: Some(PathBuf::from("identity")),
+                adjust: None,
             },
             TweakOptions {
                 device: Some(0),
                 mode: Some(ColorMode::Sdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
+                adjust: None,
             },
         ]
     );
@@ -100,6 +104,28 @@ fn many_config_loader_accepts_single_tweak_object() {
             device: Some(0),
             mode: Some(ColorMode::Hdr),
             lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
+            adjust: None,
+        }]
+    );
+}
+
+#[test]
+fn config_loads_adjust_options() {
+    let tweaks = TweakOptions::many_from_config_file("tests/fixtures/config-adjust.json").unwrap();
+
+    assert_eq!(
+        tweaks,
+        vec![TweakOptions {
+            device: Some(0),
+            mode: Some(ColorMode::Sdr),
+            lut: Some(PathBuf::from("identity")),
+            adjust: Some(AdjustOptions {
+                contrast: Some(1.05),
+                brightness: Some(0.01),
+                gamma: Some(1.0),
+                gain: Some([1.0, 0.95, 1.0]),
+                offset: Some([0.0, 0.0, 0.0]),
+            }),
         }]
     );
 }

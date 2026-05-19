@@ -40,6 +40,7 @@ fn lut_path_parses_as_optional_lut_argument() {
                 device: Some(1),
                 lut: Some(path),
                 mode: None,
+                ..
             },
     })) = cli::parse_command(&args)
     else {
@@ -63,6 +64,7 @@ fn root_lut_equals_argument_parses_as_watch_defaults() {
                 device: None,
                 lut: Some(path),
                 mode: None,
+                ..
             },
     })) = cli::parse_command(&args)
     else {
@@ -86,6 +88,7 @@ fn root_config_equals_argument_parses_as_watch_defaults() {
                 device: None,
                 lut: None,
                 mode: None,
+                ..
             },
     })) = cli::parse_command(&args)
     else {
@@ -113,6 +116,7 @@ fn root_config_and_lut_equals_arguments_parse_as_watch_with_override() {
                 device: Some(1),
                 lut: Some(path),
                 mode: None,
+                ..
             },
     })) = cli::parse_command(&args)
     else {
@@ -235,6 +239,7 @@ fn identity_lut_parses_as_reserved_lut_value() {
                 device: Some(1),
                 lut: Some(path),
                 mode: None,
+                ..
             },
     })) = cli::parse_command(&args)
     else {
@@ -274,6 +279,7 @@ fn config_path_parses_as_optional_argument() {
                 device: None,
                 lut: None,
                 mode: None,
+                ..
             },
     })) = cli::parse_command(&args)
     else {
@@ -297,6 +303,7 @@ fn reset_parses_device_option() {
                 device: Some(1),
                 lut: None,
                 mode: None,
+                ..
             },
     })) = cli::parse_command(&args)
     else {
@@ -320,6 +327,7 @@ fn mode_parses_as_shared_option() {
                 device: None,
                 lut: Some(path),
                 mode: Some(ColorMode::Sdr),
+                ..
             },
     })) = cli::parse_command(&args)
     else {

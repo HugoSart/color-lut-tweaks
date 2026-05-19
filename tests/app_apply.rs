@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 
 use color_lut_tweaks::Result;
-use color_lut_tweaks::app::{self, ColorMode, TweakOptions};
+use color_lut_tweaks::app::{self, AdjustOptions, ColorMode, TweakOptions};
 use color_lut_tweaks::lut::GammaRamp;
 use color_lut_tweaks::platform::DisplayPlatform;
 
@@ -16,6 +16,7 @@ fn apply_without_mode_does_not_check_display_mode() {
             device: Some(0),
             lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
             mode: None,
+            adjust: None,
         },
     )
     .unwrap();
@@ -34,6 +35,7 @@ fn apply_with_mode_checks_display_mode() {
             device: Some(0),
             lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
             mode: Some(ColorMode::Hdr),
+            adjust: None,
         },
     )
     .unwrap();
@@ -53,6 +55,7 @@ fn apply_identity_lut_uses_generated_identity_ramp() {
             device: Some(0),
             lut: Some(PathBuf::from("identity")),
             mode: None,
+            adjust: None,
         },
     )
     .unwrap();
@@ -74,11 +77,13 @@ fn apply_tweak_list_applies_only_entries_matching_current_mode() {
                 device: Some(0),
                 lut: Some(PathBuf::from("identity")),
                 mode: Some(ColorMode::Sdr),
+                adjust: None,
             },
             TweakOptions {
                 device: Some(0),
                 lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
                 mode: Some(ColorMode::Hdr),
+                adjust: None,
             },
         ],
     )
@@ -90,6 +95,31 @@ fn apply_tweak_list_applies_only_entries_matching_current_mode() {
         &[(0, GammaRamp::identity())]
     );
     assert_eq!(report.applied.len(), 1);
+}
+
+#[test]
+fn apply_adjusts_lut_before_applying_gamma_ramp() {
+    let platform = MockDisplayPlatform::default();
+
+    app::apply_tweaks(
+        &platform,
+        &TweakOptions {
+            device: Some(0),
+            lut: Some(PathBuf::from("identity")),
+            mode: None,
+            adjust: Some(AdjustOptions {
+                gain: Some([1.0, 0.5, 1.0]),
+                ..AdjustOptions::default()
+            }),
+        },
+    )
+    .unwrap();
+
+    let applied = platform.applied.borrow();
+    let ramp = &applied[0].1;
+    assert_eq!(ramp.values()[0][255], u16::MAX);
+    assert_eq!(ramp.values()[1][255], 32768);
+    assert_eq!(ramp.values()[2][255], u16::MAX);
 }
 
 #[derive(Default)]

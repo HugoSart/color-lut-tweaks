@@ -15,7 +15,7 @@ pub enum Command {
     TrayWorker(StartOptions),
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CliTweakOptions {
     pub config: Option<PathBuf>,
     pub tweaks: TweakOptions,

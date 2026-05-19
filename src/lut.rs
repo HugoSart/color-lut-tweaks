@@ -67,6 +67,10 @@ impl GammaRamp {
         Ok(Self { values })
     }
 
+    pub fn from_values(values: [[u16; ENTRIES]; CHANNELS]) -> Self {
+        Self { values }
+    }
+
     pub fn values(&self) -> &[[u16; ENTRIES]; CHANNELS] {
         &self.values
     }

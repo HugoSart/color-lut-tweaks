@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::lut::{Channel, GammaRamp, LUT_SIZE};
+use crate::lut::{CHANNELS, Channel, ENTRIES, GammaRamp, LUT_SIZE};
 use crate::platform::DisplayPlatform;
 
 pub const IDENTITY_LUT: &str = "identity";
@@ -50,6 +50,17 @@ pub fn load_lut(path: impl AsRef<Path>) -> Result<GammaRamp> {
     }
 }
 
+pub fn load_adjusted_lut(
+    path: impl AsRef<Path>,
+    adjust: Option<&AdjustOptions>,
+) -> Result<GammaRamp> {
+    let ramp = load_lut(path)?;
+    match adjust {
+        Some(adjust) => adjust.apply_to(&ramp),
+        None => Ok(ramp),
+    }
+}
+
 pub fn resolve_lut_path(path: impl AsRef<Path>) -> Result<PathBuf> {
     let path = path.as_ref();
     if is_named_lut(path) {
@@ -64,7 +75,7 @@ pub fn apply_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
 
     if let Some(path) = &tweaks.lut {
         let device_indices = target_device_indices(platform, tweaks.device)?;
-        let ramp = load_lut(path)?;
+        let ramp = load_adjusted_lut(path, tweaks.adjust.as_ref())?;
         let mut applied_lut = false;
         for device_index in &device_indices {
             let mode_matches = if let Some(mode) = tweaks.mode {
@@ -116,6 +127,7 @@ pub fn watch_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
             &device_indices,
             tweaks.mode.unwrap_or(ColorMode::Hdr),
             path,
+            tweaks.adjust.as_ref(),
         )
     } else {
         let mut previous_states = vec![None; device_indices.len()];
@@ -140,8 +152,9 @@ pub fn watch_mode(
     device_indices: &[usize],
     mode: ColorMode,
     path: impl AsRef<Path>,
+    adjust: Option<&AdjustOptions>,
 ) -> Result<()> {
-    let ramp = load_lut(path)?;
+    let ramp = load_adjusted_lut(path, adjust)?;
     let original_ramps = device_indices
         .iter()
         .map(|device_index| Ok((*device_index, platform.capture_gamma_ramp(*device_index)?)))
@@ -368,7 +381,7 @@ fn start_rules(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) -> Resu
                 "`start` config entry {position} needs a `lut` path"
             ))
         })?;
-        let ramp = load_lut(path)?;
+        let ramp = load_adjusted_lut(path, options.adjust.as_ref())?;
         let mode = options.mode.unwrap_or(ColorMode::Hdr);
 
         for device_index in target_device_indices(platform, options.device)? {
@@ -413,7 +426,7 @@ fn target_device_indices(
     Ok((0..platform.active_device_count()?).collect())
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
 pub struct TweakOptions {
     #[serde(default)]
     pub device: Option<usize>,
@@ -421,6 +434,8 @@ pub struct TweakOptions {
     pub lut: Option<PathBuf>,
     #[serde(default)]
     pub mode: Option<ColorMode>,
+    #[serde(default)]
+    pub adjust: Option<AdjustOptions>,
 }
 
 impl TweakOptions {
@@ -485,6 +500,9 @@ impl TweakOptions {
         if overrides.mode.is_some() {
             self.mode = overrides.mode;
         }
+        if overrides.adjust.is_some() {
+            self.adjust = overrides.adjust.clone();
+        }
     }
 
     fn resolve_paths_relative_to(&mut self, config_path: &Path) {
@@ -497,6 +515,92 @@ impl TweakOptions {
             self.lut = Some(parent.join(lut));
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+pub struct AdjustOptions {
+    #[serde(default)]
+    pub contrast: Option<f32>,
+    #[serde(default)]
+    pub brightness: Option<f32>,
+    #[serde(default)]
+    pub gamma: Option<f32>,
+    #[serde(default)]
+    pub gain: Option<[f32; CHANNELS]>,
+    #[serde(default)]
+    pub offset: Option<[f32; CHANNELS]>,
+}
+
+impl AdjustOptions {
+    pub fn apply_to(&self, ramp: &GammaRamp) -> Result<GammaRamp> {
+        let contrast = self.finite_or_default(self.contrast, 1.0, "contrast")?;
+        let brightness = self.finite_or_default(self.brightness, 0.0, "brightness")?;
+        let gamma = self.finite_or_default(self.gamma, 1.0, "gamma")?;
+        if gamma <= 0.0 {
+            return Err(Error::InvalidArguments(
+                "`adjust.gamma` must be greater than 0".to_string(),
+            ));
+        }
+
+        let gain = self.finite_array_or_default(self.gain, [1.0; CHANNELS], "gain")?;
+        let offset = self.finite_array_or_default(self.offset, [0.0; CHANNELS], "offset")?;
+
+        let mut values = [[0u16; ENTRIES]; CHANNELS];
+        for channel in 0..CHANNELS {
+            for index in 0..ENTRIES {
+                let mut value = ramp.values()[channel][index] as f32 / u16::MAX as f32;
+                value += brightness;
+
+                // HDR-safe soft contrast
+                let c = contrast.max(0.01);
+                let x = value - 0.5;
+                value = 0.5 + (x * c) / (1.0 + x.abs() * (c - 1.0) * 2.0);
+
+                value = value.clamp(0.0, 1.0).powf(1.0 / gamma);
+                value = value.clamp(0.0, 1.0).powf(1.0 / gamma);
+                value = value * gain[channel] + offset[channel];
+                values[channel][index] = normalized_to_u16(value);
+            }
+        }
+
+        Ok(GammaRamp::from_values(values))
+    }
+
+    fn finite_or_default(
+        &self,
+        value: Option<f32>,
+        default: f32,
+        name: &'static str,
+    ) -> Result<f32> {
+        let value = value.unwrap_or(default);
+        if value.is_finite() {
+            Ok(value)
+        } else {
+            Err(Error::InvalidArguments(format!(
+                "`adjust.{name}` must be finite"
+            )))
+        }
+    }
+
+    fn finite_array_or_default(
+        &self,
+        value: Option<[f32; CHANNELS]>,
+        default: [f32; CHANNELS],
+        name: &'static str,
+    ) -> Result<[f32; CHANNELS]> {
+        let value = value.unwrap_or(default);
+        if value.iter().all(|item| item.is_finite()) {
+            Ok(value)
+        } else {
+            Err(Error::InvalidArguments(format!(
+                "`adjust.{name}` values must be finite"
+            )))
+        }
+    }
+}
+
+fn normalized_to_u16(value: f32) -> u16 {
+    (value.clamp(0.0, 1.0) * u16::MAX as f32).round() as u16
 }
 
 #[derive(serde::Deserialize)]
