@@ -11,7 +11,7 @@ mod windows_tray {
     use std::sync::{Arc, mpsc};
     use std::thread::{self, JoinHandle};
 
-    use crate::app::{self, TweakOptions};
+    use crate::app::{self, RuntimeOptions, TweakOptions};
     use crate::error::{Error, Result};
     use crate::platform::SystemDisplayPlatform;
 
@@ -47,8 +47,9 @@ mod windows_tray {
 
     const TRAY_UID: u32 = 1;
     const MENU_ENABLED: usize = 1001;
-    const MENU_RELOAD: usize = 1002;
-    const MENU_QUIT: usize = 1003;
+    const MENU_FORCE: usize = 1002;
+    const MENU_RELOAD: usize = 1003;
+    const MENU_QUIT: usize = 1004;
 
     pub fn launch(config: Option<PathBuf>) -> Result<()> {
         let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
@@ -77,6 +78,7 @@ mod windows_tray {
             let hwnd = create_window()?;
             let mut state = Box::new(TrayState {
                 enabled: true,
+                force: true,
                 worker: None,
                 config,
             });
@@ -91,6 +93,7 @@ mod windows_tray {
 
     struct TrayState {
         enabled: bool,
+        force: bool,
         worker: Option<RuntimeWorker>,
         config: PathBuf,
     }
@@ -108,11 +111,13 @@ mod windows_tray {
             let (tx, rx) = mpsc::channel();
             let hwnd_value = hwnd as isize;
             let thread_shutdown = shutdown.clone();
+            let force = self.force;
             let handle = thread::spawn(move || {
                 let platform = SystemDisplayPlatform::new();
-                let result = app::run_tweaks_until(&platform, &tweaks, || {
-                    thread_shutdown.load(Ordering::Relaxed)
-                });
+                let result =
+                    app::run_tweaks_until(&platform, &tweaks, RuntimeOptions { force }, || {
+                        thread_shutdown.load(Ordering::Relaxed)
+                    });
                 let _ = tx.send(result);
                 unsafe {
                     PostMessageW(hwnd_value as Hwnd, WM_WORKER_DONE, 0, 0);
@@ -151,6 +156,15 @@ mod windows_tray {
             } else {
                 self.start_worker(hwnd)?;
                 self.enabled = true;
+            }
+
+            Ok(())
+        }
+
+        fn toggle_force(&mut self, hwnd: Hwnd) -> Result<()> {
+            self.force = !self.force;
+            if self.enabled {
+                self.reload(hwnd)?;
             }
 
             Ok(())
@@ -297,18 +311,17 @@ mod windows_tray {
         }
 
         let enabled = wide("Enabled");
+        let force = wide("Force");
         let reload = wide("Reload");
         let quit = wide("Quit");
-        let enabled_flags = if unsafe { state(hwnd) }
-            .map(|state| state.enabled)
-            .unwrap_or(false)
-        {
-            MF_STRING | MF_CHECKED
+        let (enabled_flags, force_flags) = if let Some(state) = unsafe { state(hwnd) } {
+            (checked_flag(state.enabled), checked_flag(state.force))
         } else {
-            MF_STRING
+            (MF_STRING, MF_STRING)
         };
         unsafe {
             AppendMenuW(menu, enabled_flags, MENU_ENABLED, enabled.as_ptr());
+            AppendMenuW(menu, force_flags, MENU_FORCE, force.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
@@ -342,6 +355,13 @@ mod windows_tray {
                     show_error(hwnd, &err.to_string());
                 }
             },
+            MENU_FORCE => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = state.toggle_force(hwnd)
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
             MENU_RELOAD => unsafe {
                 if let Some(state) = state(hwnd)
                     && let Err(err) = state.reload(hwnd)
@@ -353,6 +373,14 @@ mod windows_tray {
                 DestroyWindow(hwnd);
             },
             _ => {}
+        }
+    }
+
+    fn checked_flag(checked: bool) -> u32 {
+        if checked {
+            MF_STRING | MF_CHECKED
+        } else {
+            MF_STRING
         }
     }
 

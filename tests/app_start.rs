@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use color_lut_tweaks::Result;
-use color_lut_tweaks::app::{self, ColorMode, TweakOptions};
+use color_lut_tweaks::app::{self, ColorMode, RuntimeOptions, TweakOptions};
 use color_lut_tweaks::lut::GammaRamp;
 use color_lut_tweaks::platform::DisplayPlatform;
 
@@ -30,7 +30,12 @@ fn start_config_loads_tweak_options_list() {
 fn empty_tweak_list_is_valid() {
     let platform = EmptyDisplayPlatform;
 
-    app::run_tweaks_until(&platform, &[], || true).unwrap();
+    app::run_tweaks_until(&platform, &[], RuntimeOptions::default(), || true).unwrap();
+}
+
+#[test]
+fn runtime_options_default_to_force_enabled() {
+    assert!(RuntimeOptions::default().force);
 }
 
 #[test]

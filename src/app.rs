@@ -176,12 +176,13 @@ pub fn watch_mode(
 }
 
 pub fn start_tweaks(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) -> Result<()> {
-    run_tweaks_until(platform, tweaks, || false)
+    run_tweaks_until(platform, tweaks, RuntimeOptions::default(), || false)
 }
 
 pub fn run_tweaks_until(
     platform: &impl DisplayPlatform,
     tweaks: &[TweakOptions],
+    options: RuntimeOptions,
     should_stop: impl Fn() -> bool,
 ) -> Result<()> {
     let rules = start_rules(platform, tweaks)?;
@@ -198,6 +199,7 @@ pub fn run_tweaks_until(
         rules,
         original_ramps: BTreeMap::new(),
         active_rules: BTreeMap::new(),
+        options,
     };
 
     runtime.capture_original_ramps(platform)?;
@@ -208,6 +210,7 @@ struct TweakRuntime {
     rules: Vec<StartRule>,
     original_ramps: BTreeMap<usize, GammaRamp>,
     active_rules: BTreeMap<usize, Option<usize>>,
+    options: RuntimeOptions,
 }
 
 impl TweakRuntime {
@@ -256,6 +259,7 @@ impl TweakRuntime {
             let active_rule = self.active_rules.get(&device_index).copied().flatten();
 
             if desired_rule == active_rule {
+                self.reapply_if_needed(platform, device_index, desired_rule)?;
                 continue;
             }
 
@@ -290,12 +294,49 @@ impl TweakRuntime {
         Ok(())
     }
 
+    fn reapply_if_needed(
+        &self,
+        platform: &impl DisplayPlatform,
+        device_index: usize,
+        desired_rule: Option<usize>,
+    ) -> Result<()> {
+        if !self.options.force {
+            return Ok(());
+        }
+
+        let Some(rule_index) = desired_rule else {
+            return Ok(());
+        };
+        let rule = &self.rules[rule_index];
+        let current_ramp = platform.capture_gamma_ramp(device_index)?;
+        if current_ramp != rule.ramp {
+            platform.apply_gamma_ramp(device_index, &rule.ramp)?;
+            println!(
+                "Device {device_index}: reapplied {} after gamma ramp changed",
+                rule.path.display()
+            );
+        }
+
+        Ok(())
+    }
+
     fn restore_original_ramps(&self, platform: &impl DisplayPlatform) -> Result<()> {
         for (device_index, ramp) in &self.original_ramps {
             platform.apply_gamma_ramp(*device_index, ramp)?;
         }
 
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RuntimeOptions {
+    pub force: bool,
+}
+
+impl Default for RuntimeOptions {
+    fn default() -> Self {
+        Self { force: true }
     }
 }
 
