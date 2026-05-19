@@ -76,7 +76,7 @@ fn named_lut_resolves_to_luts_folder_next_to_exe() {
 #[test]
 fn named_lut_in_config_is_not_resolved_relative_to_config_file() {
     let tweaks =
-        TweakOptions::list_from_config_file("configs/xiaomi-27i-pro-hdr-eotf-correction.json")
+        TweakOptions::list_from_config_file("configs/xiaomi-g-pro-27i-hdr-eotf-correction.json")
             .unwrap();
 
     assert_eq!(
