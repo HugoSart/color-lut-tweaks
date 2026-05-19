@@ -60,23 +60,11 @@ OBS1: If you do not specify file extension or a path like string, the tool will 
 <br>OBS2: Replace `"device": 0` with the device number of your monitor,
 
 ## Running
-After having your project build and configuration in place, run the executable with no args to launch the tray app in
-the background and immediately return the shell:
+After having your project build and configuration in place, run the executable. It will start running in the background
+and will appear in the system tray.
 
 ```shell
 color-lut-tweaks.exe
-```
-
-Run the tray app attached to the current terminal when you want foreground/debug behavior:
-
-```shell
-color-lut-tweaks.exe tray --config=.\config.json
-```
-
-Run the coordinated watcher without the tray UI:
-
-```shell
-color-lut-tweaks.exe start --config=.\config.json
 ```
 
 ---
