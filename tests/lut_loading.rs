@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use color_lut_tweaks::app;
 use color_lut_tweaks::lut::{Channel, GammaRamp, LUT_SIZE};
 
 #[test]
@@ -28,6 +29,36 @@ fn rejects_wrong_sized_lut_fixture() {
 
     assert!(err.to_string().contains("expected 1536 bytes"));
     assert!(err.to_string().contains(&(LUT_SIZE - 2).to_string()));
+}
+
+#[test]
+fn loads_identity_1d_cube_as_gamma_ramp() {
+    let ramp = GammaRamp::from_cube_file(fixture("identity-1d.cube")).unwrap();
+
+    assert_eq!(ramp, GammaRamp::identity());
+}
+
+#[test]
+fn loads_1d_cube_with_channel_curves() {
+    let ramp = GammaRamp::from_cube_file(fixture("red-boost-1d.cube")).unwrap();
+
+    assert_eq!(ramp.values()[0][255], u16::MAX);
+    assert_eq!(ramp.values()[1][255], 32768);
+    assert_eq!(ramp.values()[2][255], 16384);
+}
+
+#[test]
+fn loads_3d_cube_as_grayscale_axis_gamma_ramp() {
+    let ramp = GammaRamp::from_cube_file(fixture("identity-3d.cube")).unwrap();
+
+    assert_eq!(ramp, GammaRamp::identity());
+}
+
+#[test]
+fn app_loader_uses_cube_parser_by_extension() {
+    let ramp = app::load_lut(fixture("identity-1d.cube")).unwrap();
+
+    assert_eq!(ramp, GammaRamp::identity());
 }
 
 fn fixture(name: &str) -> PathBuf {

@@ -37,7 +37,16 @@ pub fn load_lut(path: impl AsRef<Path>) -> Result<GammaRamp> {
     if is_identity_lut(path) {
         Ok(GammaRamp::identity())
     } else {
-        GammaRamp::from_file(resolve_lut_path(path)?)
+        let path = resolve_lut_path(path)?;
+        if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("cube"))
+        {
+            GammaRamp::from_cube_file(path)
+        } else {
+            GammaRamp::from_file(path)
+        }
     }
 }
 

@@ -58,6 +58,9 @@ create this tool). Example:
 
 OBS1: If you do not specify file extension or a path like string, the tool will look for the LUTs in the `luts/` folder.
 <br>OBS2: Replace `"device": 0` with the device number of your monitor,
+<br>OBS3: The `lut` field accepts raw Windows `.lut` files and `.cube` files. `LUT_1D_SIZE` `.cube` files are converted
+directly into a Windows gamma ramp. `LUT_3D_SIZE` `.cube` files are approximated by sampling the grayscale axis because
+Windows `SetDeviceGammaRamp` cannot apply a true 3D LUT.
 
 ## Running
 After having your project build and configuration in place, run the executable. It will start running in the background
