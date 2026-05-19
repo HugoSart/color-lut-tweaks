@@ -1,0 +1,12 @@
+{
+  "device": 0,
+  "mode": "sdr",
+  "lut": "identity",
+  "adjust": {
+    "contrast": 1.05,
+    "brightness": 0.01,
+    "gamma": 1.0,
+    "gain": [1.0, 0.95, 1.0],
+    "offset": [0.0, 0.0, 0.0]
+  }
+}

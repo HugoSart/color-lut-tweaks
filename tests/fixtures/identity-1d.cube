@@ -1,0 +1,4 @@
+TITLE "Identity 1D"
+LUT_1D_SIZE 2
+0.0 0.0 0.0
+1.0 1.0 1.0
