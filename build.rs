@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 fn main() {
     println!("cargo:rerun-if-changed=luts");
     println!("cargo:rerun-if-changed=metadata/icon.ico");
+    println!("cargo:rerun-if-changed=configs/identity-config.json");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     embed_windows_icon(&manifest_dir);
@@ -16,7 +17,7 @@ fn main() {
 
     let destination_dir = profile_target_dir().join("luts");
     fs::create_dir_all(&destination_dir).expect("create target luts directory");
-    create_default_config(&destination_dir);
+    copy_default_config(&manifest_dir, &destination_dir);
     copy_icon(&manifest_dir, &destination_dir);
 
     for entry in fs::read_dir(&source_dir).expect("read luts directory") {
@@ -59,7 +60,7 @@ fn copy_icon(manifest_dir: &Path, luts_destination_dir: &Path) {
         .expect("copy icon into target profile directory");
 }
 
-fn create_default_config(luts_destination_dir: &Path) {
+fn copy_default_config(manifest_dir: &Path, luts_destination_dir: &Path) {
     let profile_dir = luts_destination_dir
         .parent()
         .expect("luts destination should have a profile parent directory");
@@ -68,7 +69,8 @@ fn create_default_config(luts_destination_dir: &Path) {
         return;
     }
 
-    fs::write(config_path, "[]\n").expect("write default config.json");
+    let source = manifest_dir.join("configs").join("identity-config.json");
+    fs::copy(source, config_path).expect("copy identity-config.json into target profile directory");
 }
 
 fn profile_target_dir() -> PathBuf {
