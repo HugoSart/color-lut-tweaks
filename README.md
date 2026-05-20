@@ -102,7 +102,6 @@ WORD ramp[3][256]
 ```
 
 That means:
-
 - `1536` bytes total
 - 3 channels: red, green, blue
 - 256 `u16` entries per channel
