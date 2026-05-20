@@ -46,34 +46,25 @@ and a custom LUT when you are in HDR:
 ]
 ```
 
+### Xiaomi G Pro 27i Users
 This project also includes a default Xiaomi G Pro 27i HDR EOTF curve correction (because this is what motivated me to 
-create this tool). You can use it by simply starting the application and selecting the desired preset. 
-This is how the configuration file looks like:
-```json
-[
-  {
-    "device": 0,
-    "mode": "sdr",
-    "lut": "Xiaomi G Pro 27i SDR (D65 Gamma22)"
-  },
-  {
-    "device": 0,
-    "mode": "hdr",
-    "lut": "Xiaomi G Pro 27i HDR (D65 PQ)"
-  }
-]
-```
+create this tool). You can use it by simply starting the application and selecting the desired preset. If the monitor
+device id is not 0, click on the "Open Configuration File" button and manually edit the device number.
 
 ![tray-screenshot.png](images/tray-screenshot.png)
 
-OBS1: If you do not specify file extension or a path like string, the tool will look for the LUTs in the `luts/` folder.
-<br>OBS2: Replace `"device": 0` with the device number of your monitor,
-<br>OBS3: The `lut` field accepts raw Windows `.lut` files and `.cube` files. `LUT_1D_SIZE` `.cube` files are converted
-directly into a Windows gamma ramp. `LUT_3D_SIZE` `.cube` files are approximated by sampling the grayscale axis because
-Windows `SetDeviceGammaRamp` cannot apply a true 3D LUT.
-<br>OBS4: The optional `adjust` block is applied after loading the LUT or `.cube`, before sending the gamma ramp to
-Windows. Omitted values default to neutral values. The order is brightness, contrast around `0.5`, gamma correction,
-then per-channel gain and offset.
+Xiaomi Presets:
+- Xiaomi G Pro 27i CHIMOLOG Calibration:
+  - Apply Native -> SRGB color conversion for SDR usage;
+  - Apply EOTF correction for HDR usage;
+- Xiaomi G Pro 27i CHIMOLOG Calibration (More Contrast):
+  - Same as above;
+  - Boost contrast;
+- Xiaomi G Pro 27i CHIMOLOG Calibration (Personal Preference):
+  - Same as above;
+  - Decrease red gain on SDR mode;
+  - Slightly increase red gain on HDR mode;
+  - This one is personal preference and may not apply to your config.
 
 ## Running
 After having your project build and configuration in place, run the executable. It will start running in the background
