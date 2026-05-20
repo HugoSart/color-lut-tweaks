@@ -9,8 +9,8 @@ permissions:
 
 jobs:
 
-  pre-commit:
-    name: Pre-commit
+  code-validations:
+    name: Code Validations
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
