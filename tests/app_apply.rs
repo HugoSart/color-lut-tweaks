@@ -122,6 +122,36 @@ fn apply_adjusts_lut_before_applying_gamma_ramp() {
     assert_eq!(ramp.values()[2][255], u16::MAX);
 }
 
+#[test]
+fn apply_brightness_adjustment_keeps_ramp_valid() {
+    let platform = MockDisplayPlatform::default();
+
+    app::apply_tweaks(
+        &platform,
+        &TweakOptions {
+            device: Some(0),
+            lut: Some(PathBuf::from("identity")),
+            mode: None,
+            adjust: Some(AdjustOptions {
+                brightness: Some(0.1),
+                ..AdjustOptions::default()
+            }),
+        },
+    )
+    .unwrap();
+
+    let applied = platform.applied.borrow();
+    let ramp = &applied[0].1;
+    assert!(
+        ramp.values()
+            .iter()
+            .flatten()
+            .all(|value| *value <= u16::MAX)
+    );
+    assert!(ramp.values()[0][0] > 0);
+    assert_eq!(ramp.values()[0][255], u16::MAX);
+}
+
 #[derive(Default)]
 struct MockDisplayPlatform {
     hdr_checks: RefCell<Vec<usize>>,

@@ -93,11 +93,12 @@ fn named_cube_resolves_to_luts_folder_next_to_exe() {
 #[test]
 fn named_lut_in_config_is_not_resolved_relative_to_config_file() {
     let tweaks =
-        TweakOptions::list_from_config_file("../configs/xiaomi-g-pro-27i-chimolog.config.json").unwrap();
+        TweakOptions::list_from_config_file("configs/xiaomi-g-pro-27i-chimolog.config.json")
+            .unwrap();
 
     assert_eq!(
         tweaks[1].lut,
-        Some(PathBuf::from("xiaomi-27i-pro-hdr-eotf-correction"))
+        Some(PathBuf::from("Xiaomi G Pro 27i HDR (D65 PQ) (chimolog)"))
     );
 }
 

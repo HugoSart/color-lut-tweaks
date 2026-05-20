@@ -549,7 +549,7 @@ impl AdjustOptions {
         for channel in 0..CHANNELS {
             for index in 0..ENTRIES {
                 let mut value = ramp.values()[channel][index] as f32 / u16::MAX as f32;
-                value += brightness;
+                value = (value + brightness).clamp(0.0, 1.0);
 
                 // HDR-safe soft contrast
                 let c = contrast.max(0.01);
@@ -557,8 +557,12 @@ impl AdjustOptions {
                 value = 0.5 + (x * c) / (1.0 + x.abs() * (c - 1.0) * 2.0);
 
                 value = value.clamp(0.0, 1.0).powf(1.0 / gamma);
-                value = value.clamp(0.0, 1.0).powf(1.0 / gamma);
                 value = value * gain[channel] + offset[channel];
+                if !value.is_finite() {
+                    return Err(Error::InvalidArguments(
+                        "`adjust` produced a non-finite gamma ramp value".to_string(),
+                    ));
+                }
                 values[channel][index] = normalized_to_u16(value);
             }
         }
@@ -644,10 +648,20 @@ fn default_luts_path(name: &Path) -> PathBuf {
 }
 
 fn default_luts_dir() -> PathBuf {
-    std::env::current_exe()
+    let Some(exe_dir) = std::env::current_exe()
         .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("luts")))
-        .unwrap_or_else(|| PathBuf::from("luts"))
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+    else {
+        return PathBuf::from("luts");
+    };
+
+    if exe_dir.file_name().is_some_and(|name| name == "deps")
+        && let Some(profile_dir) = exe_dir.parent()
+    {
+        return profile_dir.join("luts");
+    }
+
+    exe_dir.join("luts")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
