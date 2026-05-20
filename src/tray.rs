@@ -13,7 +13,7 @@ mod windows_tray {
 
     use crate::app::{self, RuntimeOptions, TweakOptions};
     use crate::error::{Error, Result};
-    use crate::platform::SystemDisplayPlatform;
+    use crate::platform::{DisplayPlatform, SystemDisplayPlatform};
 
     const APP_NAME: &str = "Color LUT Tweaks";
     const WM_APP: u32 = 0x8000;
@@ -375,6 +375,7 @@ mod windows_tray {
             return;
         }
 
+        let devices_header = wide("Devices");
         let directory_header = wide("Directory");
         let open_explorer = wide("Open In Explorer");
         let open_config_label = wide("Open Configuration File");
@@ -399,6 +400,9 @@ mod windows_tray {
                 (MF_STRING, MF_STRING, MF_STRING)
             };
         unsafe {
+            AppendMenuW(menu, section_header_flags(), 0, devices_header.as_ptr());
+            append_device_rows(menu);
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, directory_header.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
             AppendMenuW(
@@ -535,6 +539,48 @@ mod windows_tray {
         } else {
             MF_STRING
         }
+    }
+
+    unsafe fn append_device_rows(menu: Hmenu) {
+        match active_device_rows() {
+            Ok(rows) if rows.is_empty() => {
+                let label = wide("(none)");
+                unsafe {
+                    AppendMenuW(menu, section_header_flags(), 0, label.as_ptr());
+                }
+            }
+            Ok(rows) => {
+                for row in rows {
+                    let label = wide(row);
+                    unsafe {
+                        AppendMenuW(menu, section_header_flags(), 0, label.as_ptr());
+                    }
+                }
+            }
+            Err(err) => {
+                let label = wide(format!("Unable to list devices: {err}"));
+                unsafe {
+                    AppendMenuW(menu, section_header_flags(), 0, label.as_ptr());
+                }
+            }
+        }
+    }
+
+    fn active_device_rows() -> Result<Vec<String>> {
+        let platform = SystemDisplayPlatform::new();
+        let count = platform.active_device_count()?;
+        let mut rows = Vec::with_capacity(count);
+        for index in 0..count {
+            let name = platform.device_label(index)?;
+            let mode = if platform.hdr_enabled(index)? {
+                "HDR"
+            } else {
+                "SDR"
+            };
+            rows.push(format!("{index}: {name} ({mode})"));
+        }
+
+        Ok(rows)
     }
 
     fn default_settings_path() -> Result<PathBuf> {

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::app::{self, AppliedTweak, ColorMode, TweakOptions};
+use crate::app::{self, AppliedTweak, ColorMode, DeviceSelector, TweakOptions};
 use crate::error::{Error, Result};
 use crate::platform::SystemDisplayPlatform;
 
@@ -83,9 +83,9 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
         }
         Command::Reset(options) => {
             let tweaks = options.resolve()?;
-            app::reset_gamma(&platform, tweaks.device)?;
+            app::reset_gamma(&platform, tweaks.device.as_ref())?;
             if let Some(device) = tweaks.device {
-                println!("Reset gamma ramp to identity on device {device}");
+                println!("Reset gamma ramp to identity on device {}", device.label());
             } else {
                 println!("Reset gamma ramp to identity on all devices");
             }
@@ -151,25 +151,25 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
 
 pub fn print_usage() {
     eprintln!("Usage:");
-    eprintln!("  color-lut-tweaks --config=<configs/default.config.json>");
+    eprintln!("  color-lut-tweaks --config=<configs/Default.config.json>");
     eprintln!(
-        "  color-lut-tweaks --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut|identity>"
+        "  color-lut-tweaks --mode=<hdr|sdr> --device=<index|name> --lut=<path-to-1536-byte-lut|identity>"
     );
     eprintln!(
-        "  color-lut-tweaks --config=<configs/default.config.json> --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut|identity>"
+        "  color-lut-tweaks --config=<configs/Default.config.json> --mode=<hdr|sdr> --device=<index|name> --lut=<path-to-1536-byte-lut|identity>"
     );
     eprintln!(
-        "  color-lut-tweaks inspect [--config <configs/default.config.json>] [--device <index>] --lut <path-to-1536-byte-lut|identity>"
+        "  color-lut-tweaks inspect [--config <configs/Default.config.json>] [--device <index|name>] --lut <path-to-1536-byte-lut|identity>"
     );
     eprintln!(
-        "  color-lut-tweaks apply [--config <configs/default.config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut|identity>]"
+        "  color-lut-tweaks apply [--config <configs/Default.config.json>] [--mode <hdr|sdr>] [--device <index|name>] [--lut <path-to-1536-byte-lut|identity>]"
     );
-    eprintln!("  color-lut-tweaks reset [--device <index>]");
+    eprintln!("  color-lut-tweaks reset [--device <index|name>]");
     eprintln!(
-        "  color-lut-tweaks watch [--config <configs/default.config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut|identity>]"
+        "  color-lut-tweaks watch [--config <configs/Default.config.json>] [--mode <hdr|sdr>] [--device <index|name>] [--lut <path-to-1536-byte-lut|identity>]"
     );
-    eprintln!("  color-lut-tweaks start [--config <configs/default.config.json>]");
-    eprintln!("  color-lut-tweaks tray [--config <configs/default.config.json>]");
+    eprintln!("  color-lut-tweaks start [--config <configs/Default.config.json>]");
+    eprintln!("  color-lut-tweaks tray [--config <configs/Default.config.json>]");
     eprintln!("  color-lut-tweaks");
 }
 
@@ -263,7 +263,7 @@ fn parse_start_options(command: &str, args: &[String]) -> Result<StartOptions> {
             }
             _ => {
                 return Err(Error::InvalidArguments(format!(
-                    "`{command}` accepts only `--config <configs/default.config.json>`"
+                    "`{command}` accepts only `--config <configs/Default.config.json>`"
                 )));
             }
         }
@@ -325,13 +325,10 @@ fn set_device(options: &mut CliTweakOptions, device: impl AsRef<str>) -> Result<
         ));
     }
 
-    let index = device.parse::<usize>().map_err(|_| {
-        Error::InvalidArguments(format!(
-            "`--device` must be a zero-based integer, got `{device}`"
-        ))
-    })?;
-
-    options.tweaks.device = Some(index);
+    options.tweaks.device = Some(device.parse::<usize>().map_or_else(
+        |_| DeviceSelector::Name(device.to_string()),
+        DeviceSelector::Index,
+    ));
     Ok(())
 }
 
@@ -371,6 +368,6 @@ fn require_lut<'a>(tweaks: &'a TweakOptions, command: &str) -> Result<&'a PathBu
 }
 
 fn expected_usage() -> String {
-    "expected no args to launch the tray, root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, `reset [--device <index>]`, `start [--config <path>]`, or `tray [--config <path>]`"
+    "expected no args to launch the tray, root options `--config=<path>`, `--mode=<hdr|sdr>`, `--device=<index|name>`, and/or `--lut=<path>`, or `inspect/apply/watch` with the same options, `reset [--device <index|name>]`, `start [--config <path>]`, or `tray [--config <path>]`"
         .to_string()
 }

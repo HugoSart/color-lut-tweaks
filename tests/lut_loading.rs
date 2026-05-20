@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::{env, fs};
 
 use color_lut_tweaks::app;
 use color_lut_tweaks::lut::{Channel, GammaRamp, LUT_SIZE};
@@ -63,6 +64,8 @@ fn app_loader_uses_cube_parser_by_extension() {
 
 #[test]
 fn app_loader_uses_cube_parser_for_named_lut_lookup() {
+    stage_named_cube_fixture();
+
     let ramp = app::load_lut("named-cube-fixture").unwrap();
 
     assert_eq!(ramp, GammaRamp::identity());
@@ -70,4 +73,20 @@ fn app_loader_uses_cube_parser_for_named_lut_lookup() {
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from("tests").join("fixtures").join(name)
+}
+
+fn stage_named_cube_fixture() {
+    let luts_dir = env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("luts");
+    fs::create_dir_all(&luts_dir).unwrap();
+    fs::copy(
+        "tests/fixtures/named-cube-fixture.cube",
+        luts_dir.join("named-cube-fixture.cube"),
+    )
+    .unwrap();
 }

@@ -13,8 +13,8 @@ pub const IDENTITY_LUT: &str = "identity";
 pub fn default_config_path() -> Result<PathBuf> {
     let exe_path = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
     Ok(exe_path.parent().map_or_else(
-        || PathBuf::from("configs").join("default.config.json"),
-        |path| path.join("configs").join("default.config.json"),
+        || PathBuf::from("configs").join("Default.config.json"),
+        |path| path.join("configs").join("Default.config.json"),
     ))
 }
 
@@ -74,7 +74,7 @@ pub fn apply_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
     let mut applied = Vec::new();
 
     if let Some(path) = &tweaks.lut {
-        let device_indices = target_device_indices(platform, tweaks.device)?;
+        let device_indices = target_device_indices(platform, tweaks.device.as_ref())?;
         let ramp = load_adjusted_lut(path, tweaks.adjust.as_ref())?;
         let mut applied_lut = false;
         for device_index in &device_indices {
@@ -110,7 +110,7 @@ pub fn apply_tweak_list(
     Ok(ApplyReport { applied })
 }
 
-pub fn reset_gamma(platform: &impl DisplayPlatform, device: Option<usize>) -> Result<()> {
+pub fn reset_gamma(platform: &impl DisplayPlatform, device: Option<&DeviceSelector>) -> Result<()> {
     let ramp = GammaRamp::identity();
     for device_index in target_device_indices(platform, device)? {
         platform.apply_gamma_ramp(device_index, &ramp)?;
@@ -119,7 +119,7 @@ pub fn reset_gamma(platform: &impl DisplayPlatform, device: Option<usize>) -> Re
 }
 
 pub fn watch_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> Result<()> {
-    let device_indices = target_device_indices(platform, tweaks.device)?;
+    let device_indices = target_device_indices(platform, tweaks.device.as_ref())?;
 
     if let Some(path) = &tweaks.lut {
         watch_mode(
@@ -384,7 +384,7 @@ fn start_rules(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) -> Resu
         let ramp = load_adjusted_lut(path, options.adjust.as_ref())?;
         let mode = options.mode.unwrap_or(ColorMode::Hdr);
 
-        for device_index in target_device_indices(platform, options.device)? {
+        for device_index in target_device_indices(platform, options.device.as_ref())? {
             rules.push(StartRule {
                 device_index,
                 mode,
@@ -417,25 +417,66 @@ struct StartRule {
 
 fn target_device_indices(
     platform: &impl DisplayPlatform,
-    device: Option<usize>,
+    device: Option<&DeviceSelector>,
 ) -> Result<Vec<usize>> {
-    if let Some(device) = device {
-        return Ok(vec![device]);
-    }
+    match device {
+        Some(DeviceSelector::Index(index)) => Ok(vec![*index]),
+        Some(DeviceSelector::Name(name)) => {
+            let count = platform.active_device_count()?;
+            let mut indices = Vec::new();
+            for index in 0..count {
+                let candidate = platform.device_name(index)?;
+                let label = platform.device_label(index)?;
+                if device_names_match(&candidate, name) || device_names_match(&label, name) {
+                    indices.push(index);
+                }
+            }
 
-    Ok((0..platform.active_device_count()?).collect())
+            if indices.is_empty() {
+                Err(Error::InvalidArguments(format!(
+                    "device `{name}` was not found among {count} active display(s)"
+                )))
+            } else {
+                Ok(indices)
+            }
+        }
+        None => Ok((0..platform.active_device_count()?).collect()),
+    }
+}
+
+fn device_names_match(candidate: &str, requested: &str) -> bool {
+    candidate.eq_ignore_ascii_case(requested)
+        || candidate
+            .strip_prefix(r"\\.\")
+            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(requested))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
 pub struct TweakOptions {
     #[serde(default)]
-    pub device: Option<usize>,
+    pub device: Option<DeviceSelector>,
     #[serde(default)]
     pub lut: Option<PathBuf>,
     #[serde(default)]
     pub mode: Option<ColorMode>,
     #[serde(default)]
     pub adjust: Option<AdjustOptions>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(untagged)]
+pub enum DeviceSelector {
+    Index(usize),
+    Name(String),
+}
+
+impl DeviceSelector {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Index(index) => index.to_string(),
+            Self::Name(name) => name.clone(),
+        }
+    }
 }
 
 impl TweakOptions {
@@ -492,7 +533,7 @@ impl TweakOptions {
 
     pub fn merge_cli_overrides(&mut self, overrides: &Self) {
         if overrides.device.is_some() {
-            self.device = overrides.device;
+            self.device = overrides.device.clone();
         }
         if overrides.lut.is_some() {
             self.lut = overrides.lut.clone();

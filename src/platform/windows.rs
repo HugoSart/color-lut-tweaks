@@ -9,6 +9,7 @@ use crate::platform::DisplayPlatform;
 const ERROR_SUCCESS: i32 = 0;
 const QDC_ONLY_ACTIVE_PATHS: u32 = 0x00000002;
 const DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME: u32 = 1;
+const DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME: u32 = 2;
 const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO: u32 = 9;
 const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2: u32 = 15;
 const DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR: u32 = 2;
@@ -28,6 +29,14 @@ impl WindowsDisplayPlatform {
 impl DisplayPlatform for WindowsDisplayPlatform {
     fn active_device_count(&self) -> Result<usize> {
         Ok(active_display_names()?.len())
+    }
+
+    fn device_name(&self, device_index: usize) -> Result<String> {
+        Ok(display_name_lossy(&active_display_name(device_index)?))
+    }
+
+    fn device_label(&self, device_index: usize) -> Result<String> {
+        device_label(device_index)
     }
 
     fn hdr_enabled(&self, device_index: usize) -> Result<bool> {
@@ -164,6 +173,47 @@ fn active_display_path_for_display_name(display_name: &[u16]) -> Result<DisplayC
     )))
 }
 
+fn device_label(device_index: usize) -> Result<String> {
+    let display = active_display_name(device_index)?;
+    if let Ok(path) = active_display_path_for_display_name(&display)
+        && let Ok(name) = target_friendly_name(&path)
+        && !name.trim().is_empty()
+    {
+        return Ok(name);
+    }
+
+    monitor_device_string(&display).map_or_else(|| Ok(display_name_lossy(&display)), Ok)
+}
+
+fn target_friendly_name(path: &DisplayConfigPathInfo) -> Result<String> {
+    let mut target_name = DisplayConfigTargetDeviceName {
+        header: DisplayConfigDeviceInfoHeader {
+            r#type: DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME,
+            size: size_of::<DisplayConfigTargetDeviceName>() as u32,
+            adapter_id: path.target_info.adapter_id,
+            id: path.target_info.id,
+        },
+        flags: 0,
+        output_technology: 0,
+        edid_manufacture_id: 0,
+        edid_product_code_id: 0,
+        connector_instance: 0,
+        monitor_friendly_device_name: [0; 64],
+        monitor_device_path: [0; 128],
+    };
+
+    let status = unsafe { DisplayConfigGetDeviceInfo((&mut target_name as *mut _) as *mut c_void) };
+    if status != ERROR_SUCCESS {
+        return Err(Error::platform(format!(
+            "DisplayConfigGetDeviceInfo target name failed with status {status}"
+        )));
+    }
+
+    Ok(display_name_lossy(
+        &target_name.monitor_friendly_device_name,
+    ))
+}
+
 fn source_display_name(path: &DisplayConfigPathInfo) -> Result<Vec<u16>> {
     let mut source_name = DisplayConfigSourceDeviceName {
         header: DisplayConfigDeviceInfoHeader {
@@ -183,6 +233,28 @@ fn source_display_name(path: &DisplayConfigPathInfo) -> Result<Vec<u16>> {
     }
 
     Ok(null_terminated_slice(&source_name.view_gdi_device_name))
+}
+
+fn monitor_device_string(display_name: &[u16]) -> Option<String> {
+    let mut index = 0;
+    loop {
+        let mut device = DisplayDeviceW::default();
+        device.cb = size_of::<DisplayDeviceW>() as u32;
+
+        let ok = unsafe { EnumDisplayDevicesW(display_name.as_ptr(), index, &mut device, 0) };
+        if ok == 0 {
+            return None;
+        }
+
+        if device.state_flags & DISPLAY_DEVICE_ACTIVE != 0 {
+            let value = display_name_lossy(&device.device_string);
+            if !value.trim().is_empty() {
+                return Some(value);
+            }
+        }
+
+        index += 1;
+    }
 }
 
 fn active_display_paths() -> Result<Vec<DisplayConfigPathInfo>> {
@@ -413,6 +485,19 @@ struct DisplayConfigGetAdvancedColorInfo2 {
 struct DisplayConfigSourceDeviceName {
     header: DisplayConfigDeviceInfoHeader,
     view_gdi_device_name: [u16; 32],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct DisplayConfigTargetDeviceName {
+    header: DisplayConfigDeviceInfoHeader,
+    flags: u32,
+    output_technology: u32,
+    edid_manufacture_id: u16,
+    edid_product_code_id: u16,
+    connector_instance: u32,
+    monitor_friendly_device_name: [u16; 64],
+    monitor_device_path: [u16; 128],
 }
 
 #[repr(C)]

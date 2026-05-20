@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 
 use color_lut_tweaks::Result;
-use color_lut_tweaks::app::{self, AdjustOptions, ColorMode, TweakOptions};
+use color_lut_tweaks::app::{self, AdjustOptions, ColorMode, DeviceSelector, TweakOptions};
 use color_lut_tweaks::lut::GammaRamp;
 use color_lut_tweaks::platform::DisplayPlatform;
 
@@ -13,7 +13,7 @@ fn apply_without_mode_does_not_check_display_mode() {
     app::apply_tweaks(
         &platform,
         &TweakOptions {
-            device: Some(0),
+            device: Some(device(0)),
             lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
             mode: None,
             adjust: None,
@@ -32,7 +32,7 @@ fn apply_with_mode_checks_display_mode() {
     let report = app::apply_tweaks(
         &platform,
         &TweakOptions {
-            device: Some(0),
+            device: Some(device(0)),
             lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
             mode: Some(ColorMode::Hdr),
             adjust: None,
@@ -52,7 +52,7 @@ fn apply_identity_lut_uses_generated_identity_ramp() {
     app::apply_tweaks(
         &platform,
         &TweakOptions {
-            device: Some(0),
+            device: Some(device(0)),
             lut: Some(PathBuf::from("identity")),
             mode: None,
             adjust: None,
@@ -74,13 +74,13 @@ fn apply_tweak_list_applies_only_entries_matching_current_mode() {
         &platform,
         &[
             TweakOptions {
-                device: Some(0),
+                device: Some(device(0)),
                 lut: Some(PathBuf::from("identity")),
                 mode: Some(ColorMode::Sdr),
                 adjust: None,
             },
             TweakOptions {
-                device: Some(0),
+                device: Some(device(0)),
                 lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
                 mode: Some(ColorMode::Hdr),
                 adjust: None,
@@ -104,7 +104,7 @@ fn apply_adjusts_lut_before_applying_gamma_ramp() {
     app::apply_tweaks(
         &platform,
         &TweakOptions {
-            device: Some(0),
+            device: Some(device(0)),
             lut: Some(PathBuf::from("identity")),
             mode: None,
             adjust: Some(AdjustOptions {
@@ -129,7 +129,7 @@ fn apply_brightness_adjustment_keeps_ramp_valid() {
     app::apply_tweaks(
         &platform,
         &TweakOptions {
-            device: Some(0),
+            device: Some(device(0)),
             lut: Some(PathBuf::from("identity")),
             mode: None,
             adjust: Some(AdjustOptions {
@@ -152,15 +152,93 @@ fn apply_brightness_adjustment_keeps_ramp_valid() {
     assert_eq!(ramp.values()[0][255], u16::MAX);
 }
 
-#[derive(Default)]
+#[test]
+fn apply_can_target_device_by_name() {
+    let platform = MockDisplayPlatform {
+        device_names: vec![
+            r"\\.\DISPLAY1".to_string(),
+            r"\\.\DISPLAY1".to_string(),
+            r"\\.\DISPLAY3".to_string(),
+        ],
+        device_labels: vec![
+            "Mi Monitor".to_string(),
+            "Mi Monitor".to_string(),
+            "Other Monitor".to_string(),
+        ],
+        ..MockDisplayPlatform::default()
+    };
+
+    app::apply_tweaks(
+        &platform,
+        &TweakOptions {
+            device: Some(DeviceSelector::Name("DISPLAY1".to_string())),
+            lut: Some(PathBuf::from("identity")),
+            mode: None,
+            adjust: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        platform.applied.borrow().as_slice(),
+        &[(0, GammaRamp::identity()), (1, GammaRamp::identity())]
+    );
+}
+
+#[test]
+fn apply_can_target_device_by_friendly_name() {
+    let platform = MockDisplayPlatform {
+        device_names: vec![r"\\.\DISPLAY1".to_string(), r"\\.\DISPLAY2".to_string()],
+        device_labels: vec!["Mi Monitor".to_string(), "Other Monitor".to_string()],
+        ..MockDisplayPlatform::default()
+    };
+
+    app::apply_tweaks(
+        &platform,
+        &TweakOptions {
+            device: Some(DeviceSelector::Name("Mi Monitor".to_string())),
+            lut: Some(PathBuf::from("identity")),
+            mode: None,
+            adjust: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        platform.applied.borrow().as_slice(),
+        &[(0, GammaRamp::identity())]
+    );
+}
+
 struct MockDisplayPlatform {
     hdr_checks: RefCell<Vec<usize>>,
     applied: RefCell<Vec<(usize, GammaRamp)>>,
+    device_names: Vec<String>,
+    device_labels: Vec<String>,
+}
+
+impl Default for MockDisplayPlatform {
+    fn default() -> Self {
+        Self {
+            hdr_checks: RefCell::new(Vec::new()),
+            applied: RefCell::new(Vec::new()),
+            device_names: vec![r"\\.\DISPLAY1".to_string()],
+            device_labels: vec!["Mi Monitor".to_string()],
+        }
+    }
 }
 
 impl DisplayPlatform for MockDisplayPlatform {
     fn active_device_count(&self) -> Result<usize> {
-        Ok(1)
+        Ok(self.device_names.len())
+    }
+
+    fn device_name(&self, device_index: usize) -> Result<String> {
+        Ok(self.device_names[device_index].clone())
+    }
+
+    fn device_label(&self, device_index: usize) -> Result<String> {
+        Ok(self.device_labels[device_index].clone())
     }
 
     fn hdr_enabled(&self, device_index: usize) -> Result<bool> {
@@ -180,4 +258,8 @@ impl DisplayPlatform for MockDisplayPlatform {
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from("tests").join("fixtures").join(name)
+}
+
+fn device(index: usize) -> DeviceSelector {
+    DeviceSelector::Index(index)
 }

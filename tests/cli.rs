@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use color_lut_tweaks::app::{ColorMode, TweakOptions};
+use color_lut_tweaks::app::{ColorMode, DeviceSelector, TweakOptions};
 use color_lut_tweaks::cli::{self, CliTweakOptions, Command as CliCommand, StartOptions};
 
 #[test]
@@ -37,7 +37,7 @@ fn lut_path_parses_as_optional_lut_argument() {
         config: None,
         tweaks:
             TweakOptions {
-                device: Some(1),
+                device: Some(DeviceSelector::Index(1)),
                 lut: Some(path),
                 mode: None,
                 ..
@@ -113,7 +113,7 @@ fn root_config_and_lut_equals_arguments_parse_as_watch_with_override() {
         config: Some(config),
         tweaks:
             TweakOptions {
-                device: Some(1),
+                device: Some(DeviceSelector::Index(1)),
                 lut: Some(path),
                 mode: None,
                 ..
@@ -236,7 +236,7 @@ fn identity_lut_parses_as_reserved_lut_value() {
         config: None,
         tweaks:
             TweakOptions {
-                device: Some(1),
+                device: Some(DeviceSelector::Index(1)),
                 lut: Some(path),
                 mode: None,
                 ..
@@ -300,7 +300,7 @@ fn reset_parses_device_option() {
         config: None,
         tweaks:
             TweakOptions {
-                device: Some(1),
+                device: Some(DeviceSelector::Index(1)),
                 lut: None,
                 mode: None,
                 ..
@@ -356,18 +356,26 @@ fn mode_must_be_hdr_or_sdr() {
 }
 
 #[test]
-fn device_must_be_zero_based_integer() {
-    let output = Command::new(env!("CARGO_BIN_EXE_color-lut-tweaks"))
-        .arg("apply")
-        .arg("--device")
-        .arg("left")
-        .output()
-        .unwrap();
+fn device_name_parses_as_shared_option() {
+    let args = vec![
+        "apply".to_string(),
+        "--device".to_string(),
+        r"\\.\DISPLAY1".to_string(),
+    ];
 
-    assert!(!output.status.success());
+    let Ok(CliCommand::Apply(CliTweakOptions {
+        config: None,
+        tweaks:
+            TweakOptions {
+                device: Some(DeviceSelector::Name(name)),
+                ..
+            },
+    })) = cli::parse_command(&args)
+    else {
+        panic!("expected apply command with device name");
+    };
 
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("`--device` must be a zero-based integer"));
+    assert_eq!(name, r"\\.\DISPLAY1");
 }
 
 #[test]

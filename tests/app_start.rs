@@ -1,7 +1,10 @@
 use std::path::PathBuf;
+use std::{env, fs};
 
 use color_lut_tweaks::Result;
-use color_lut_tweaks::app::{self, AdjustOptions, ColorMode, RuntimeOptions, TweakOptions};
+use color_lut_tweaks::app::{
+    self, AdjustOptions, ColorMode, DeviceSelector, RuntimeOptions, TweakOptions,
+};
 use color_lut_tweaks::lut::GammaRamp;
 use color_lut_tweaks::platform::DisplayPlatform;
 
@@ -13,13 +16,13 @@ fn start_config_loads_tweak_options_list() {
         tweaks,
         vec![
             TweakOptions {
-                device: Some(0),
+                device: Some(device(0)),
                 mode: Some(ColorMode::Hdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
                 adjust: None,
             },
             TweakOptions {
-                device: Some(0),
+                device: Some(device(0)),
                 mode: Some(ColorMode::Sdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
                 adjust: None,
@@ -56,13 +59,13 @@ fn identity_lut_in_config_is_not_resolved_as_relative_path() {
         tweaks,
         vec![
             TweakOptions {
-                device: Some(0),
+                device: Some(device(0)),
                 mode: Some(ColorMode::Hdr),
                 lut: Some(PathBuf::from("identity")),
                 adjust: None,
             },
             TweakOptions {
-                device: Some(0),
+                device: Some(device(0)),
                 mode: Some(ColorMode::Sdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
                 adjust: None,
@@ -84,6 +87,8 @@ fn named_lut_resolves_to_luts_folder_next_to_exe() {
 
 #[test]
 fn named_cube_resolves_to_luts_folder_next_to_exe() {
+    stage_named_cube_fixture();
+
     let path = app::resolve_lut_path("named-cube-fixture").unwrap();
 
     assert_eq!(path.file_name().unwrap(), "named-cube-fixture.cube");
@@ -93,7 +98,7 @@ fn named_cube_resolves_to_luts_folder_next_to_exe() {
 #[test]
 fn named_lut_in_config_is_not_resolved_relative_to_config_file() {
     let tweaks =
-        TweakOptions::list_from_config_file("configs/xiaomi-g-pro-27i-chimolog.config.json")
+        TweakOptions::list_from_config_file("../configs/Xiaomi G Pro 27i CHIMOLOG Calibration.config.json")
             .unwrap();
 
     assert_eq!(
@@ -109,7 +114,7 @@ fn many_config_loader_accepts_single_tweak_object() {
     assert_eq!(
         tweaks,
         vec![TweakOptions {
-            device: Some(0),
+            device: Some(device(0)),
             mode: Some(ColorMode::Hdr),
             lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
             adjust: None,
@@ -124,7 +129,7 @@ fn config_loads_adjust_options() {
     assert_eq!(
         tweaks,
         vec![TweakOptions {
-            device: Some(0),
+            device: Some(device(0)),
             mode: Some(ColorMode::Sdr),
             lut: Some(PathBuf::from("identity")),
             adjust: Some(AdjustOptions {
@@ -161,6 +166,10 @@ impl DisplayPlatform for EmptyDisplayPlatform {
         unreachable!("empty tweak list does not enumerate devices")
     }
 
+    fn device_name(&self, _device_index: usize) -> Result<String> {
+        unreachable!("empty tweak list does not enumerate devices")
+    }
+
     fn hdr_enabled(&self, _device_index: usize) -> Result<bool> {
         unreachable!("empty tweak list does not read HDR state")
     }
@@ -172,4 +181,24 @@ impl DisplayPlatform for EmptyDisplayPlatform {
     fn apply_gamma_ramp(&self, _device_index: usize, _ramp: &GammaRamp) -> Result<()> {
         unreachable!("empty tweak list does not apply gamma")
     }
+}
+
+fn device(index: usize) -> DeviceSelector {
+    DeviceSelector::Index(index)
+}
+
+fn stage_named_cube_fixture() {
+    let luts_dir = env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("luts");
+    fs::create_dir_all(&luts_dir).unwrap();
+    fs::copy(
+        "tests/fixtures/named-cube-fixture.cube",
+        luts_dir.join("named-cube-fixture.cube"),
+    )
+    .unwrap();
 }
