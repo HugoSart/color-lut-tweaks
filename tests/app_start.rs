@@ -83,6 +83,14 @@ fn named_lut_resolves_to_luts_folder_next_to_exe() {
 }
 
 #[test]
+fn named_cube_resolves_to_luts_folder_next_to_exe() {
+    let path = app::resolve_lut_path("named-cube-fixture").unwrap();
+
+    assert_eq!(path.file_name().unwrap(), "named-cube-fixture.cube");
+    assert_eq!(path.parent().unwrap().file_name().unwrap(), "luts");
+}
+
+#[test]
 fn named_lut_in_config_is_not_resolved_relative_to_config_file() {
     let tweaks =
         TweakOptions::list_from_config_file("configs/xiaomi-g-pro-27i-hdr-eotf-correction.json")

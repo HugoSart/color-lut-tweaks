@@ -61,6 +61,13 @@ fn app_loader_uses_cube_parser_by_extension() {
     assert_eq!(ramp, GammaRamp::identity());
 }
 
+#[test]
+fn app_loader_uses_cube_parser_for_named_lut_lookup() {
+    let ramp = app::load_lut("named-cube-fixture").unwrap();
+
+    assert_eq!(ramp, GammaRamp::identity());
+}
+
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from("tests").join("fixtures").join(name)
 }

@@ -35,6 +35,8 @@ mod windows_tray {
 
     const MF_STRING: u32 = 0x00000000;
     const MF_CHECKED: u32 = 0x00000008;
+    const MF_GRAYED: u32 = 0x00000001;
+    const MF_POPUP: u32 = 0x00000010;
     const MF_SEPARATOR: u32 = 0x00000800;
     const TPM_RETURNCMD: u32 = 0x00000100;
     const TPM_RIGHTBUTTON: u32 = 0x00000002;
@@ -44,12 +46,19 @@ mod windows_tray {
     const IDI_APPLICATION: usize = 32512;
     const LR_LOADFROMFILE: u32 = 0x00000010;
     const LR_DEFAULTSIZE: u32 = 0x00000040;
+    const SW_SHOWNORMAL: i32 = 1;
 
     const TRAY_UID: u32 = 1;
-    const MENU_ENABLED: usize = 1001;
-    const MENU_FORCE: usize = 1002;
-    const MENU_RELOAD: usize = 1003;
-    const MENU_QUIT: usize = 1004;
+    const MENU_OPEN_EXPLORER: usize = 1001;
+    const MENU_OPEN_CONFIG: usize = 1002;
+    const MENU_ENABLED: usize = 1003;
+    const MENU_FORCE: usize = 1004;
+    const MENU_RELOAD: usize = 1005;
+    const MENU_STARTUP: usize = 1006;
+    const MENU_QUIT: usize = 1007;
+    const MENU_CONTRAST_LINEAR: usize = 1101;
+    const MENU_CONTRAST_PRESERVE_ENDPOINTS: usize = 1102;
+    const MENU_CONTRAST_SOFT_CURVE: usize = 1103;
 
     pub fn launch(config: Option<PathBuf>) -> Result<()> {
         let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
@@ -79,6 +88,7 @@ mod windows_tray {
             let mut state = Box::new(TrayState {
                 enabled: true,
                 force: true,
+                startup_enabled: crate::startup::enabled().unwrap_or(false),
                 worker: None,
                 config,
             });
@@ -94,6 +104,7 @@ mod windows_tray {
     struct TrayState {
         enabled: bool,
         force: bool,
+        startup_enabled: bool,
         worker: Option<RuntimeWorker>,
         config: PathBuf,
     }
@@ -165,6 +176,18 @@ mod windows_tray {
             self.force = !self.force;
             if self.enabled {
                 self.reload(hwnd)?;
+            }
+
+            Ok(())
+        }
+
+        fn toggle_startup(&mut self) -> Result<()> {
+            if crate::startup::enabled()? {
+                crate::startup::disable()?;
+                self.startup_enabled = false;
+            } else {
+                crate::startup::enable()?;
+                self.startup_enabled = true;
             }
 
             Ok(())
@@ -310,20 +333,75 @@ mod windows_tray {
             return;
         }
 
+        let directory_header = wide("Directory");
+        let open_explorer = wide("Open In Explorer");
+        let open_config_label = wide("Open Configuration File");
+        let color_header = wide("Color Adjustments");
         let enabled = wide("Enabled");
         let force = wide("Force");
         let reload = wide("Reload");
+        let contrast_curve = wide("Contrast Curve");
+        let contrast_linear = wide("Linear");
+        let contrast_preserve_endpoints = wide("Preserve Black/White");
+        let contrast_soft_curve = wide("Soft S-Curve");
+        let application_header = wide("Application");
+        let startup = wide("Start with Windows");
         let quit = wide("Quit");
-        let (enabled_flags, force_flags) = if let Some(state) = unsafe { state(hwnd) } {
-            (checked_flag(state.enabled), checked_flag(state.force))
-        } else {
-            (MF_STRING, MF_STRING)
-        };
+        let (enabled_flags, force_flags, startup_flags) =
+            if let Some(state) = unsafe { state(hwnd) } {
+                state.startup_enabled = crate::startup::enabled().unwrap_or(false);
+                (
+                    checked_flag(state.enabled),
+                    checked_flag(state.force),
+                    checked_flag(state.startup_enabled),
+                )
+            } else {
+                (MF_STRING, MF_STRING, MF_STRING)
+            };
         unsafe {
+            AppendMenuW(menu, section_header_flags(), 0, directory_header.as_ptr());
+            AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                MENU_OPEN_CONFIG,
+                open_config_label.as_ptr(),
+            );
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            AppendMenuW(menu, section_header_flags(), 0, color_header.as_ptr());
             AppendMenuW(menu, enabled_flags, MENU_ENABLED, enabled.as_ptr());
             AppendMenuW(menu, force_flags, MENU_FORCE, force.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
+            let contrast_menu = CreatePopupMenu();
+            if !contrast_menu.is_null() {
+                AppendMenuW(
+                    contrast_menu,
+                    checked_flag(true),
+                    MENU_CONTRAST_LINEAR,
+                    contrast_linear.as_ptr(),
+                );
+                AppendMenuW(
+                    contrast_menu,
+                    MF_STRING,
+                    MENU_CONTRAST_PRESERVE_ENDPOINTS,
+                    contrast_preserve_endpoints.as_ptr(),
+                );
+                AppendMenuW(
+                    contrast_menu,
+                    MF_STRING,
+                    MENU_CONTRAST_SOFT_CURVE,
+                    contrast_soft_curve.as_ptr(),
+                );
+                AppendMenuW(
+                    menu,
+                    MF_STRING | MF_POPUP,
+                    contrast_menu as usize,
+                    contrast_curve.as_ptr(),
+                );
+            }
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            AppendMenuW(menu, section_header_flags(), 0, application_header.as_ptr());
+            AppendMenuW(menu, startup_flags, MENU_STARTUP, startup.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
         }
 
@@ -348,6 +426,18 @@ mod windows_tray {
         }
 
         match command as usize {
+            MENU_OPEN_EXPLORER => unsafe {
+                if let Err(err) = open_in_explorer() {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
+            MENU_OPEN_CONFIG => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = open_config(&state.config)
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
             MENU_ENABLED => unsafe {
                 if let Some(state) = state(hwnd)
                     && let Err(err) = state.toggle_enabled(hwnd)
@@ -362,6 +452,13 @@ mod windows_tray {
                     show_error(hwnd, &err.to_string());
                 }
             },
+            MENU_STARTUP => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = state.toggle_startup()
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
             MENU_RELOAD => unsafe {
                 if let Some(state) = state(hwnd)
                     && let Err(err) = state.reload(hwnd)
@@ -369,11 +466,16 @@ mod windows_tray {
                     show_error(hwnd, &err.to_string());
                 }
             },
+            MENU_CONTRAST_LINEAR | MENU_CONTRAST_PRESERVE_ENDPOINTS | MENU_CONTRAST_SOFT_CURVE => {}
             MENU_QUIT => unsafe {
                 DestroyWindow(hwnd);
             },
             _ => {}
         }
+    }
+
+    fn section_header_flags() -> u32 {
+        MF_STRING | MF_GRAYED
     }
 
     fn checked_flag(checked: bool) -> u32 {
@@ -382,6 +484,53 @@ mod windows_tray {
         } else {
             MF_STRING
         }
+    }
+
+    fn open_in_explorer() -> Result<()> {
+        let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
+        let Some(parent) = exe.parent() else {
+            return Err(Error::platform("could not find executable directory"));
+        };
+
+        open_path(parent)
+    }
+
+    fn open_config(path: &std::path::Path) -> Result<()> {
+        if path.exists() {
+            return open_path(path);
+        }
+
+        if let Some(parent) = path.parent() {
+            return open_path(parent);
+        }
+
+        Err(Error::platform(format!(
+            "configuration file does not exist: {}",
+            path.display()
+        )))
+    }
+
+    fn open_path(path: impl AsRef<std::path::Path>) -> Result<()> {
+        let operation = wide("open");
+        let path = wide(path.as_ref().to_string_lossy());
+        let result = unsafe {
+            ShellExecuteW(
+                ptr::null_mut(),
+                operation.as_ptr(),
+                path.as_ptr(),
+                ptr::null(),
+                ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        } as isize;
+
+        if result <= 32 {
+            return Err(Error::platform(format!(
+                "ShellExecuteW failed with status {result}"
+            )));
+        }
+
+        Ok(())
     }
 
     unsafe fn handle_worker_done(hwnd: Hwnd) {
@@ -658,6 +807,14 @@ mod windows_tray {
     #[link(name = "shell32")]
     unsafe extern "system" {
         fn Shell_NotifyIconW(message: u32, data: *mut NotifyIconDataW) -> i32;
+        fn ShellExecuteW(
+            hwnd: Hwnd,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show_command: i32,
+        ) -> *mut c_void;
     }
 }
 

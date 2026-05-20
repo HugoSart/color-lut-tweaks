@@ -23,7 +23,7 @@ fn main() {
     for entry in fs::read_dir(&source_dir).expect("read luts directory") {
         let entry = entry.expect("read luts entry");
         let path = entry.path();
-        if !is_lut_file(&path) {
+        if !is_lut_asset(&path) {
             continue;
         }
 
@@ -84,10 +84,12 @@ fn profile_target_dir() -> PathBuf {
         .to_path_buf()
 }
 
-fn is_lut_file(path: &Path) -> bool {
+fn is_lut_asset(path: &Path) -> bool {
     path.is_file()
         && path
             .extension()
             .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("lut"))
+            .is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("lut") || extension.eq_ignore_ascii_case("cube")
+            })
 }

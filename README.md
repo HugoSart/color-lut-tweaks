@@ -36,7 +36,7 @@ and a custom LUT when you are in HDR:
     "mode": "hdr",
     "lut": "./path-to-my-lut.lut",
     "adjust": {
-      "contrast": 1.05,
+      "contrast": 1.00,
       "brightness": 0.0,
       "gamma": 1.0,
       "gain": [1.0, 1.0, 1.0],
@@ -53,12 +53,12 @@ create this tool). Example:
   {
     "device": 0,
     "mode": "sdr",
-    "lut": "identity"
+    "lut": "Xiaomi G Pro 27i SDR (D65 Gamma22)"
   },
   {
     "device": 0,
     "mode": "hdr",
-    "lut": "xiaomi-g-pro-27i-hdr-eotf-correction"
+    "lut": "Xiaomi G Pro 27i HDR (D65 PQ)"
   }
 ]
 ```

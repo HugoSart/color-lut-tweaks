@@ -633,7 +633,14 @@ fn is_named_lut(path: &Path) -> bool {
 }
 
 fn default_luts_path(name: &Path) -> PathBuf {
-    default_luts_dir().join(name).with_extension("lut")
+    let directory = default_luts_dir();
+    let lut_path = directory.join(name).with_extension("lut");
+    let cube_path = directory.join(name).with_extension("cube");
+
+    match (lut_path.exists(), cube_path.exists()) {
+        (false, true) => cube_path,
+        _ => lut_path,
+    }
 }
 
 fn default_luts_dir() -> PathBuf {
