@@ -1,0 +1,16 @@
+[
+  {
+    "device": 0,
+    "mode": "sdr",
+    "lut": "Xiaomi G Pro 27i SDR (D65 Gamma22)"
+  },
+  {
+    "device": 0,
+    "mode": "hdr",
+    "lut": "Xiaomi G Pro 27i HDR (D65 PQ)",
+    "adjust": {
+      "contrast": 1,
+      "gamma": 1
+    }
+  }
+]

@@ -151,25 +151,25 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
 
 pub fn print_usage() {
     eprintln!("Usage:");
-    eprintln!("  color-lut-tweaks --config=<identity-config.json>");
+    eprintln!("  color-lut-tweaks --config=<identity.config.json>");
     eprintln!(
         "  color-lut-tweaks --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut|identity>"
     );
     eprintln!(
-        "  color-lut-tweaks --config=<identity-config.json> --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut|identity>"
+        "  color-lut-tweaks --config=<identity.config.json> --mode=<hdr|sdr> --device=<index> --lut=<path-to-1536-byte-lut|identity>"
     );
     eprintln!(
-        "  color-lut-tweaks inspect [--config <identity-config.json>] [--device <index>] --lut <path-to-1536-byte-lut|identity>"
+        "  color-lut-tweaks inspect [--config <identity.config.json>] [--device <index>] --lut <path-to-1536-byte-lut|identity>"
     );
     eprintln!(
-        "  color-lut-tweaks apply [--config <identity-config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut|identity>]"
+        "  color-lut-tweaks apply [--config <identity.config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut|identity>]"
     );
     eprintln!("  color-lut-tweaks reset [--device <index>]");
     eprintln!(
-        "  color-lut-tweaks watch [--config <identity-config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut|identity>]"
+        "  color-lut-tweaks watch [--config <identity.config.json>] [--mode <hdr|sdr>] [--device <index>] [--lut <path-to-1536-byte-lut|identity>]"
     );
-    eprintln!("  color-lut-tweaks start [--config <identity-config.json>]");
-    eprintln!("  color-lut-tweaks tray [--config <identity-config.json>]");
+    eprintln!("  color-lut-tweaks start [--config <identity.config.json>]");
+    eprintln!("  color-lut-tweaks tray [--config <identity.config.json>]");
     eprintln!("  color-lut-tweaks");
 }
 
@@ -263,7 +263,7 @@ fn parse_start_options(command: &str, args: &[String]) -> Result<StartOptions> {
             }
             _ => {
                 return Err(Error::InvalidArguments(format!(
-                    "`{command}` accepts only `--config <identity-config.json>`"
+                    "`{command}` accepts only `--config <identity.config.json>`"
                 )));
             }
         }

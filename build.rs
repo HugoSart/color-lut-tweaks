@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 fn main() {
     println!("cargo:rerun-if-changed=luts");
     println!("cargo:rerun-if-changed=metadata/icon.ico");
-    println!("cargo:rerun-if-changed=configs/identity-config.json");
+    println!("cargo:rerun-if-changed=configs/identity.config.json");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     embed_windows_icon(&manifest_dir);
@@ -69,8 +69,8 @@ fn copy_default_config(manifest_dir: &Path, luts_destination_dir: &Path) {
         return;
     }
 
-    let source = manifest_dir.join("configs").join("identity-config.json");
-    fs::copy(source, config_path).expect("copy identity-config.json into target profile directory");
+    let source = manifest_dir.join("configs").join("identity.config.json");
+    fs::copy(source, config_path).expect("copy identity.config.json into target profile directory");
 }
 
 fn profile_target_dir() -> PathBuf {
