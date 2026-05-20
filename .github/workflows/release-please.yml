@@ -37,8 +37,8 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist/color-lut-tweaks | Out-Null
           Copy-Item target/release/color-lut-tweaks.exe dist/color-lut-tweaks/
-          Copy-Item target/release/config.json dist/color-lut-tweaks/
           Copy-Item target/release/icon.ico dist/color-lut-tweaks/
+          Copy-Item target/release/configs dist/color-lut-tweaks/configs -Recurse
           Copy-Item target/release/luts dist/color-lut-tweaks/luts -Recurse
           Compress-Archive -Path dist/color-lut-tweaks -DestinationPath dist/color-lut-tweaks-windows-x64.zip
 

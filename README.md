@@ -15,7 +15,7 @@ cargo build --release
 This will build the project in `target/release`, where it's ready to be executed. Important files:
 - `luts/`: optional pre-built LUTs folder; it's recommended to copy this folder to the same folder as the 
            executable if you decide to move the executable somewhere else.
-- `config.json`: edit this file to configure how you want to load the LUTs in your system;
+- `configs/default.config.json`: edit this file to configure how you want to load the LUTs in your system;
 - `color-lut-tweaks.exe`: the main executable;
 
 ## Configuration

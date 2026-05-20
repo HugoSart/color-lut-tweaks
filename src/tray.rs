@@ -26,6 +26,7 @@ mod windows_tray {
     const GWLP_USERDATA: i32 = -21;
     const DETACHED_PROCESS: u32 = 0x00000008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+    const ERROR_ALREADY_EXISTS: u32 = 183;
 
     const NIM_ADD: u32 = 0x00000000;
     const NIM_DELETE: u32 = 0x00000002;
@@ -56,11 +57,14 @@ mod windows_tray {
     const MENU_RELOAD: usize = 1005;
     const MENU_STARTUP: usize = 1006;
     const MENU_QUIT: usize = 1007;
-    const MENU_CONTRAST_LINEAR: usize = 1101;
-    const MENU_CONTRAST_PRESERVE_ENDPOINTS: usize = 1102;
-    const MENU_CONTRAST_SOFT_CURVE: usize = 1103;
+    const MENU_PRESET_BASE: usize = 2000;
+    const INSTANCE_MUTEX_NAME: &str = "Local\\ColorLutTweaksTray";
 
     pub fn launch(config: Option<PathBuf>) -> Result<()> {
+        if instance_running() {
+            return Ok(());
+        }
+
         let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
         let mut command = Command::new(exe);
         command.arg("tray-worker");
@@ -81,18 +85,31 @@ mod windows_tray {
     }
 
     pub fn run(config: Option<PathBuf>) -> Result<()> {
-        let config = config.unwrap_or(app::default_config_path()?);
+        let Some(_instance) = SingleInstance::acquire()? else {
+            return Ok(());
+        };
+
+        let settings_path = default_settings_path()?;
+        let mut settings = TraySettings::load(&settings_path)?;
+        settings.preset = resolve_existing_preset(&settings.preset)?;
+        settings.start_with_windows = crate::startup::enabled().unwrap_or(false);
+        settings.save(&settings_path)?;
+        let config = config.unwrap_or_else(|| preset_config_path(&settings.preset));
 
         unsafe {
             let hwnd = create_window()?;
             let mut state = Box::new(TrayState {
-                enabled: true,
-                force: true,
-                startup_enabled: crate::startup::enabled().unwrap_or(false),
+                enabled: settings.enabled,
+                force: settings.force,
+                startup_enabled: settings.start_with_windows,
                 worker: None,
                 config,
+                settings_path,
+                settings,
             });
-            state.start_worker(hwnd)?;
+            if state.enabled {
+                state.start_worker(hwnd)?;
+            }
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
             add_tray_icon(hwnd)?;
             message_loop()?;
@@ -107,6 +124,8 @@ mod windows_tray {
         startup_enabled: bool,
         worker: Option<RuntimeWorker>,
         config: PathBuf,
+        settings_path: PathBuf,
+        settings: TraySettings,
     }
 
     struct RuntimeWorker {
@@ -169,11 +188,15 @@ mod windows_tray {
                 self.enabled = true;
             }
 
+            self.settings.enabled = self.enabled;
+            self.save_settings()?;
             Ok(())
         }
 
         fn toggle_force(&mut self, hwnd: Hwnd) -> Result<()> {
             self.force = !self.force;
+            self.settings.force = self.force;
+            self.save_settings()?;
             if self.enabled {
                 self.reload(hwnd)?;
             }
@@ -190,7 +213,20 @@ mod windows_tray {
                 self.startup_enabled = true;
             }
 
+            self.settings.start_with_windows = self.startup_enabled;
+            self.save_settings()?;
             Ok(())
+        }
+
+        fn select_preset(&mut self, hwnd: Hwnd, preset: String) -> Result<()> {
+            if self.settings.preset == preset {
+                return Ok(());
+            }
+
+            self.settings.preset = preset;
+            self.config = preset_config_path(&self.settings.preset);
+            self.save_settings()?;
+            self.reload(hwnd)
         }
 
         fn reload(&mut self, hwnd: Hwnd) -> Result<()> {
@@ -198,11 +234,17 @@ mod windows_tray {
             if self.enabled {
                 if let Err(err) = self.start_worker(hwnd) {
                     self.enabled = false;
+                    self.settings.enabled = false;
+                    let _ = self.save_settings();
                     return Err(err);
                 }
             }
 
             Ok(())
+        }
+
+        fn save_settings(&self) -> Result<()> {
+            self.settings.save(&self.settings_path)
         }
 
         fn handle_worker_done(&mut self) -> Result<()> {
@@ -337,13 +379,11 @@ mod windows_tray {
         let open_explorer = wide("Open In Explorer");
         let open_config_label = wide("Open Configuration File");
         let color_header = wide("Color Adjustments");
+        let presets = preset_items().unwrap_or_else(|_| Vec::new());
+        let presets_label = wide("Presets");
         let enabled = wide("Enabled");
         let force = wide("Force");
         let reload = wide("Reload");
-        let contrast_curve = wide("Contrast Curve");
-        let contrast_linear = wide("Linear");
-        let contrast_preserve_endpoints = wide("Preserve Black/White");
-        let contrast_soft_curve = wide("Soft S-Curve");
         let application_header = wide("Application");
         let startup = wide("Start with Windows");
         let quit = wide("Quit");
@@ -369,36 +409,35 @@ mod windows_tray {
             );
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, color_header.as_ptr());
-            AppendMenuW(menu, enabled_flags, MENU_ENABLED, enabled.as_ptr());
-            AppendMenuW(menu, force_flags, MENU_FORCE, force.as_ptr());
-            AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
-            let contrast_menu = CreatePopupMenu();
-            if !contrast_menu.is_null() {
-                AppendMenuW(
-                    contrast_menu,
-                    checked_flag(true),
-                    MENU_CONTRAST_LINEAR,
-                    contrast_linear.as_ptr(),
-                );
-                AppendMenuW(
-                    contrast_menu,
-                    MF_STRING,
-                    MENU_CONTRAST_PRESERVE_ENDPOINTS,
-                    contrast_preserve_endpoints.as_ptr(),
-                );
-                AppendMenuW(
-                    contrast_menu,
-                    MF_STRING,
-                    MENU_CONTRAST_SOFT_CURVE,
-                    contrast_soft_curve.as_ptr(),
-                );
+            let presets_menu = CreatePopupMenu();
+            if !presets_menu.is_null() {
+                if presets.is_empty() {
+                    let empty = wide("(none)");
+                    AppendMenuW(presets_menu, section_header_flags(), 0, empty.as_ptr());
+                }
+
+                if let Some(state) = state(hwnd) {
+                    for (index, preset) in presets.iter().enumerate() {
+                        let label = wide(&preset.name);
+                        AppendMenuW(
+                            presets_menu,
+                            checked_flag(state.settings.preset == preset.name),
+                            MENU_PRESET_BASE + index,
+                            label.as_ptr(),
+                        );
+                    }
+                }
+
                 AppendMenuW(
                     menu,
                     MF_STRING | MF_POPUP,
-                    contrast_menu as usize,
-                    contrast_curve.as_ptr(),
+                    presets_menu as usize,
+                    presets_label.as_ptr(),
                 );
             }
+            AppendMenuW(menu, enabled_flags, MENU_ENABLED, enabled.as_ptr());
+            AppendMenuW(menu, force_flags, MENU_FORCE, force.as_ptr());
+            AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, application_header.as_ptr());
             AppendMenuW(menu, startup_flags, MENU_STARTUP, startup.as_ptr());
@@ -425,7 +464,20 @@ mod windows_tray {
             DestroyMenu(menu);
         }
 
-        match command as usize {
+        let command = command as usize;
+        if (MENU_PRESET_BASE..MENU_PRESET_BASE + presets.len()).contains(&command) {
+            unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Some(preset) = presets.get(command - MENU_PRESET_BASE)
+                    && let Err(err) = state.select_preset(hwnd, preset.name.clone())
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            }
+            return;
+        }
+
+        match command {
             MENU_OPEN_EXPLORER => unsafe {
                 if let Err(err) = open_in_explorer() {
                     show_error(hwnd, &err.to_string());
@@ -466,7 +518,6 @@ mod windows_tray {
                     show_error(hwnd, &err.to_string());
                 }
             },
-            MENU_CONTRAST_LINEAR | MENU_CONTRAST_PRESERVE_ENDPOINTS | MENU_CONTRAST_SOFT_CURVE => {}
             MENU_QUIT => unsafe {
                 DestroyWindow(hwnd);
             },
@@ -484,6 +535,140 @@ mod windows_tray {
         } else {
             MF_STRING
         }
+    }
+
+    fn default_settings_path() -> Result<PathBuf> {
+        let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
+        Ok(exe.parent().map_or_else(
+            || PathBuf::from("settings.json"),
+            |path| path.join("settings.json"),
+        ))
+    }
+
+    fn configs_dir() -> PathBuf {
+        std::env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(|parent| parent.join("configs")))
+            .unwrap_or_else(|| PathBuf::from("configs"))
+    }
+
+    fn preset_config_path(preset: &str) -> PathBuf {
+        configs_dir().join(format!("{preset}.config.json"))
+    }
+
+    fn preset_items() -> Result<Vec<PresetItem>> {
+        let mut presets = Vec::new();
+        let directory = configs_dir();
+        if !directory.is_dir() {
+            return Ok(presets);
+        }
+
+        for entry in std::fs::read_dir(&directory).map_err(|source| Error::Io {
+            path: Some(directory.clone()),
+            source,
+        })? {
+            let entry = entry.map_err(|source| Error::Io {
+                path: Some(directory.clone()),
+                source,
+            })?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Some(name) = file_name.strip_suffix(".config.json") else {
+                continue;
+            };
+
+            presets.push(PresetItem {
+                name: name.to_string(),
+            });
+        }
+
+        presets.sort_by_key(|preset| preset.name.to_ascii_lowercase());
+        Ok(presets)
+    }
+
+    fn resolve_existing_preset(current: &str) -> Result<String> {
+        if preset_config_path(current).is_file() {
+            return Ok(current.to_string());
+        }
+
+        let default = default_preset();
+        if preset_config_path(&default).is_file() {
+            return Ok(default);
+        }
+
+        Ok(preset_items()?
+            .into_iter()
+            .next()
+            .map(|preset| preset.name)
+            .unwrap_or_else(default_preset))
+    }
+
+    #[derive(Clone, Debug)]
+    struct PresetItem {
+        name: String,
+    }
+
+    #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+    struct TraySettings {
+        #[serde(default = "default_preset")]
+        preset: String,
+        #[serde(default = "default_true")]
+        enabled: bool,
+        #[serde(default = "default_true")]
+        force: bool,
+        #[serde(default)]
+        start_with_windows: bool,
+    }
+
+    impl Default for TraySettings {
+        fn default() -> Self {
+            Self {
+                preset: default_preset(),
+                enabled: true,
+                force: true,
+                start_with_windows: false,
+            }
+        }
+    }
+
+    impl TraySettings {
+        fn load(path: &std::path::Path) -> Result<Self> {
+            if !path.is_file() {
+                return Ok(Self::default());
+            }
+
+            let json = std::fs::read_to_string(path).map_err(|source| Error::Io {
+                path: Some(path.to_path_buf()),
+                source,
+            })?;
+            serde_json::from_str(&json).map_err(|source| {
+                Error::InvalidArguments(format!("failed to parse {}: {source}", path.display()))
+            })
+        }
+
+        fn save(&self, path: &std::path::Path) -> Result<()> {
+            let json = serde_json::to_string_pretty(self).map_err(|source| {
+                Error::InvalidArguments(format!("failed to serialize tray settings: {source}"))
+            })?;
+            std::fs::write(path, format!("{json}\n")).map_err(|source| Error::Io {
+                path: Some(path.to_path_buf()),
+                source,
+            })
+        }
+    }
+
+    fn default_preset() -> String {
+        "default".to_string()
+    }
+
+    fn default_true() -> bool {
+        true
     }
 
     fn open_in_explorer() -> Result<()> {
@@ -661,6 +846,45 @@ mod windows_tray {
     type Hicon = *mut c_void;
     type Hcursor = *mut c_void;
     type Hbrush = *mut c_void;
+    type Handle = *mut c_void;
+
+    struct SingleInstance {
+        handle: Handle,
+    }
+
+    impl SingleInstance {
+        fn acquire() -> Result<Option<Self>> {
+            let name = wide(INSTANCE_MUTEX_NAME);
+            let handle = unsafe { CreateMutexW(ptr::null_mut(), 1, name.as_ptr()) };
+            if handle.is_null() {
+                return Err(last_os_error("CreateMutexW failed"));
+            }
+
+            if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+                unsafe {
+                    CloseHandle(handle);
+                }
+                return Ok(None);
+            }
+
+            Ok(Some(Self { handle }))
+        }
+    }
+
+    impl Drop for SingleInstance {
+        fn drop(&mut self) {
+            unsafe {
+                CloseHandle(self.handle);
+            }
+        }
+    }
+
+    fn instance_running() -> bool {
+        let Ok(Some(_instance)) = SingleInstance::acquire() else {
+            return true;
+        };
+        false
+    }
 
     #[repr(C)]
     struct WndClassExW {
@@ -802,6 +1026,9 @@ mod windows_tray {
     #[link(name = "kernel32")]
     unsafe extern "system" {
         fn GetModuleHandleW(module_name: *const u16) -> Hinstance;
+        fn CreateMutexW(attributes: *mut c_void, initial_owner: i32, name: *const u16) -> Handle;
+        fn GetLastError() -> u32;
+        fn CloseHandle(handle: Handle) -> i32;
     }
 
     #[link(name = "shell32")]
