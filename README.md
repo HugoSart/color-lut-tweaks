@@ -18,6 +18,21 @@ This will build the project in `target/release`, where it's ready to be executed
 - `configs/`: pre-built configurations files (shown in "Presets" menu);
 - `color-lut-tweaks.exe`: the main executable;
 
+## Development Checks
+
+Install the local commit hooks with:
+
+```shell
+winget install --id j178.Prek
+prek install
+```
+
+Run the same checks used by GitHub PR checks with:
+
+```shell
+prek run --all-files
+```
+
 ## Configuration
 
 The configuration file is a JSON array of LUTs to load.

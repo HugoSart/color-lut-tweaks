@@ -13,21 +13,13 @@ permissions:
 
 jobs:
 
-  run-tests:
-    name: Tests
+  pre-commit:
+    name: Pre-commit
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test
-
-  run-clippy:
-    name: Clippy
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v6
-      - run: rustup component add clippy
-      - uses: actions-rs/clippy-check@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: j178/prek-action@v2
