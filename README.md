@@ -7,7 +7,7 @@ You can also use this tool to apply EOTF correction for HDR or SDR only.
 
 ## Installing
 
-Download the latest [release](https://github.com/HugoSart/color-lut-tweaks/releases) (coming soon), or download the source code of this project and build it using `cargo`:
+Download the latest [release](https://github.com/HugoSart/color-lut-tweaks/releases), or download the source code of this project and build it using `cargo`:
 ```shell
 cargo build --release
 ```
@@ -15,7 +15,7 @@ cargo build --release
 This will build the project in `target/release`, where it's ready to be executed. Important files:
 - `luts/`: optional pre-built LUTs folder; it's recommended to copy this folder to the same folder as the 
            executable if you decide to move the executable somewhere else.
-- `configs/default.config.json`: edit this file to configure how you want to load the LUTs in your system;
+- `configs/`: pre-built configurations files (shown in "Presets" menu);
 - `color-lut-tweaks.exe`: the main executable;
 
 ## Configuration
@@ -47,7 +47,8 @@ and a custom LUT when you are in HDR:
 ```
 
 This project also includes a default Xiaomi G Pro 27i HDR EOTF curve correction (because this is what motivated me to 
-create this tool). Example:
+create this tool). You can use it by simply starting the application and selecting the desired preset. 
+This is how the configuration file looks like:
 ```json
 [
   {
@@ -62,6 +63,8 @@ create this tool). Example:
   }
 ]
 ```
+
+![tray-screenshot.png](images/tray-screenshot.png)
 
 OBS1: If you do not specify file extension or a path like string, the tool will look for the LUTs in the `luts/` folder.
 <br>OBS2: Replace `"device": 0` with the device number of your monitor,
