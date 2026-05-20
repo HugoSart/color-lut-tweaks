@@ -231,13 +231,13 @@ mod windows_tray {
 
         fn reload(&mut self, hwnd: Hwnd) -> Result<()> {
             self.stop_worker()?;
-            if self.enabled {
-                if let Err(err) = self.start_worker(hwnd) {
-                    self.enabled = false;
-                    self.settings.enabled = false;
-                    let _ = self.save_settings();
-                    return Err(err);
-                }
+            if self.enabled
+                && let Err(err) = self.start_worker(hwnd)
+            {
+                self.enabled = false;
+                self.settings.enabled = false;
+                let _ = self.save_settings();
+                return Err(err);
             }
 
             Ok(())
@@ -343,16 +343,15 @@ mod windows_tray {
         lparam: isize,
     ) -> isize {
         match message {
-            WM_TRAY_ICON => {
+            WM_TRAY_ICON
                 if lparam as u32 == WM_RBUTTONUP
                     || lparam as u32 == WM_LBUTTONUP
-                    || lparam as u32 == WM_CONTEXTMENU
-                {
-                    unsafe {
-                        show_menu(hwnd);
-                    }
-                    return 0;
+                    || lparam as u32 == WM_CONTEXTMENU =>
+            {
+                unsafe {
+                    show_menu(hwnd);
                 }
+                return 0;
             }
             WM_WORKER_DONE => unsafe {
                 handle_worker_done(hwnd);
@@ -765,11 +764,11 @@ mod windows_tray {
     }
 
     unsafe fn handle_worker_done(hwnd: Hwnd) {
-        if let Some(state) = unsafe { state(hwnd) } {
-            if let Err(err) = state.handle_worker_done() {
-                unsafe {
-                    show_error(hwnd, &err.to_string());
-                }
+        if let Some(state) = unsafe { state(hwnd) }
+            && let Err(err) = state.handle_worker_done()
+        {
+            unsafe {
+                show_error(hwnd, &err.to_string());
             }
         }
     }

@@ -12,7 +12,7 @@ fn identity_ramp_is_generated_in_source_code() {
     assert_eq!(ramp.values()[0][255], u16::MAX);
     assert_eq!(ramp.values()[1][255], u16::MAX);
     assert_eq!(ramp.values()[2][255], u16::MAX);
-    assert_eq!(ramp.channel_summary(Channel::Red).monotonic, true);
+    assert!(ramp.channel_summary(Channel::Red).monotonic);
 }
 
 #[test]

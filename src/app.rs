@@ -587,8 +587,8 @@ impl AdjustOptions {
         let offset = self.finite_array_or_default(self.offset, [0.0; CHANNELS], "offset")?;
 
         let mut values = [[0u16; ENTRIES]; CHANNELS];
-        for channel in 0..CHANNELS {
-            for index in 0..ENTRIES {
+        for (channel, channel_values) in values.iter_mut().enumerate() {
+            for (index, entry) in channel_values.iter_mut().enumerate() {
                 let mut value = ramp.values()[channel][index] as f32 / u16::MAX as f32;
                 value = (value + brightness).clamp(0.0, 1.0);
 
@@ -604,7 +604,7 @@ impl AdjustOptions {
                         "`adjust` produced a non-finite gamma ramp value".to_string(),
                     ));
                 }
-                values[channel][index] = normalized_to_u16(value);
+                *entry = normalized_to_u16(value);
             }
         }
 

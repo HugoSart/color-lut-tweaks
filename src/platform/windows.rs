@@ -26,6 +26,12 @@ impl WindowsDisplayPlatform {
     }
 }
 
+impl Default for WindowsDisplayPlatform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DisplayPlatform for WindowsDisplayPlatform {
     fn active_device_count(&self) -> Result<usize> {
         Ok(active_display_names()?.len())
@@ -238,8 +244,10 @@ fn source_display_name(path: &DisplayConfigPathInfo) -> Result<Vec<u16>> {
 fn monitor_device_string(display_name: &[u16]) -> Option<String> {
     let mut index = 0;
     loop {
-        let mut device = DisplayDeviceW::default();
-        device.cb = size_of::<DisplayDeviceW>() as u32;
+        let mut device = DisplayDeviceW {
+            cb: size_of::<DisplayDeviceW>() as u32,
+            ..Default::default()
+        };
 
         let ok = unsafe { EnumDisplayDevicesW(display_name.as_ptr(), index, &mut device, 0) };
         if ok == 0 {
@@ -298,8 +306,10 @@ fn active_display_names() -> Result<Vec<Vec<u16>>> {
     let mut index = 0;
 
     loop {
-        let mut device = DisplayDeviceW::default();
-        device.cb = size_of::<DisplayDeviceW>() as u32;
+        let mut device = DisplayDeviceW {
+            cb: size_of::<DisplayDeviceW>() as u32,
+            ..Default::default()
+        };
 
         let ok = unsafe { EnumDisplayDevicesW(ptr::null(), index, &mut device, 0) };
         if ok == 0 {

@@ -142,12 +142,6 @@ fn apply_brightness_adjustment_keeps_ramp_valid() {
 
     let applied = platform.applied.borrow();
     let ramp = &applied[0].1;
-    assert!(
-        ramp.values()
-            .iter()
-            .flatten()
-            .all(|value| *value <= u16::MAX)
-    );
     assert!(ramp.values()[0][0] > 0);
     assert_eq!(ramp.values()[0][255], u16::MAX);
 }

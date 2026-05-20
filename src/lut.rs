@@ -215,8 +215,8 @@ impl Cube {
                 self.channel_position(2, input) * (self.size - 1) as f32,
             ];
             let output = interpolate_3d(&self.samples, self.size, position);
-            for channel in 0..CHANNELS {
-                values[channel][index] = float_to_u16(output[channel]);
+            for (channel, channel_values) in values.iter_mut().enumerate() {
+                channel_values[index] = float_to_u16(output[channel]);
             }
         }
 

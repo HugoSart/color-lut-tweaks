@@ -97,9 +97,10 @@ fn named_cube_resolves_to_luts_folder_next_to_exe() {
 
 #[test]
 fn named_lut_in_config_is_not_resolved_relative_to_config_file() {
-    let tweaks =
-        TweakOptions::list_from_config_file("../configs/Xiaomi G Pro 27i CHIMOLOG Calibration.config.json")
-            .unwrap();
+    let tweaks = TweakOptions::list_from_config_file(
+        "configs/Xiaomi G Pro 27i CHIMOLOG Calibration.config.json",
+    )
+    .unwrap();
 
     assert_eq!(
         tweaks[1].lut,
