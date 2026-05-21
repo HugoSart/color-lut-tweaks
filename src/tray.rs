@@ -487,16 +487,15 @@ mod windows_tray {
         let help_header = wide("Help: Tool is not working?");
         let help_auto_color = wide("Disable Windows \"Auto Color Management\"");
         let help_nvidia_reference = wide("Disable NVIDIA \"Override to reference mode\"");
-        let directory_header = wide("Directory");
         let open_explorer = wide("Open In Explorer");
-        let open_config_label = wide("Open Configuration File");
+        let edit_config_label = wide("Edit");
         let color_header = wide("Color Adjustments");
         let presets = preset_items().unwrap_or_else(|_| Vec::new());
         let presets_label = wide("Presets");
         let enabled = wide("Enabled");
         let force = wide("Force");
         let reload = wide("Reload");
-        let application_header = wide(format!("Application (v{})", env!("CARGO_PKG_VERSION")));
+        let application_header = wide(format!("Color LUT Tweaker v{}", env!("CARGO_PKG_VERSION")));
         let update_status = unsafe {
             state(hwnd)
                 .map(|state| state.update_status())
@@ -530,15 +529,6 @@ mod windows_tray {
                 help_nvidia_reference.as_ptr(),
             );
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-            AppendMenuW(menu, section_header_flags(), 0, directory_header.as_ptr());
-            AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
-            AppendMenuW(
-                menu,
-                MF_STRING,
-                MENU_OPEN_CONFIG,
-                open_config_label.as_ptr(),
-            );
-            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, color_header.as_ptr());
             let presets_menu = CreatePopupMenu();
             if !presets_menu.is_null() {
@@ -566,12 +556,19 @@ mod windows_tray {
                     presets_label.as_ptr(),
                 );
             }
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                MENU_OPEN_CONFIG,
+                edit_config_label.as_ptr(),
+            );
             AppendMenuW(menu, enabled_flags, MENU_ENABLED, enabled.as_ptr());
             AppendMenuW(menu, force_flags, MENU_FORCE, force.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, application_header.as_ptr());
             AppendMenuW(menu, update_flags, MENU_UPDATE, update_label.as_ptr());
+            AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
             AppendMenuW(menu, startup_flags, MENU_STARTUP, startup.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
         }
