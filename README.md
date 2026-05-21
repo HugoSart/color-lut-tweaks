@@ -16,6 +16,7 @@ This will build the project in `target/release`, where it's ready to be executed
 - `luts/`: optional pre-built LUTs folder; it's recommended to copy this folder to the same folder as the 
            executable if you decide to move the executable somewhere else.
 - `configs/`: pre-built configurations files (shown in "Presets" menu);
+- `profiles/`: bundled ICC/ICM color profiles;
 - `color-lut-tweaks.exe`: the main executable;
 
 ## Development Checks
