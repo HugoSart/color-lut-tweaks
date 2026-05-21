@@ -14,6 +14,7 @@ You can also use this tool to apply EOTF correction for HDR or SDR only.
 - [ ] Automatic Windows configuration of ICC profiles and recommended settings.
 - [ ] Automatic NVIDIA configuration of system color settings.
 - [ ] Automatic monitor configuration using DDC/CI.
+- [ ] Improve initial loading performance for faster auto start.
 
 ### Future
 - [ ] Automatic AMD configuration of system color settings.
