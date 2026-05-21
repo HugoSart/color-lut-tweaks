@@ -5,5 +5,6 @@ pub mod lut;
 pub mod platform;
 pub mod startup;
 pub mod tray;
+pub mod updates;
 
 pub use error::{Error, Result};
