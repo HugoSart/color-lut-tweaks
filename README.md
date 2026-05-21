@@ -5,6 +5,24 @@ you can load separate `.lut` files everytime you switch to HDR or SDR mode.
 
 You can also use this tool to apply EOTF correction for HDR or SDR only.
 
+## Roadmap
+
+### MVP
+- [x] ~~Loading LUT files in SDR and HDR.~~
+- [x] ~~Support for configuration presets.~~
+- [x] ~~Preset for Xiaomi G Pro 27i.~~
+- [ ] Automatic Windows configuration of ICC profiles and recommended settings.
+- [ ] Automatic NVIDIA configuration of system color settings.
+- [ ] Automatic monitor configuration using DDC/CI.
+
+### Future
+- [ ] Automatic AMD configuration of system color settings.
+- [ ] Automatic Intel Graphics configuration of system color settings.
+- [ ] Create graphical user interface.
+- [ ] Improve command line interface.
+- [ ] MacOS support.
+- [ ] Linux support.
+
 ## Installing
 
 Download the latest [release](https://github.com/HugoSart/color-lut-tweaks/releases), or download the source code of this project and build it using `cargo`:
@@ -19,19 +37,13 @@ This will build the project in `target/release`, where it's ready to be executed
 - `profiles/`: bundled ICC/ICM color profiles;
 - `color-lut-tweaks.exe`: the main executable;
 
-## Development Checks
 
-Install the local commit hooks with:
-
-```shell
-winget install --id j178.Prek
-prek install
-```
-
-Run the same checks used by GitHub PR checks with:
+## Running
+After having your project build and configuration in place, run the executable. It will start running in the background
+and will appear in the system tray.
 
 ```shell
-prek run --all-files
+color-lut-tweaks.exe
 ```
 
 ## Configuration
@@ -64,8 +76,10 @@ and a custom LUT when you are in HDR:
 
 ### Xiaomi G Pro 27i Users
 This project also includes a default Xiaomi G Pro 27i HDR EOTF curve correction (because this is what motivated me to 
-create this tool). You can use it by simply starting the application and selecting the desired preset. If the monitor
-device id is not 0, click on the "Open Configuration File" button and manually edit the device number.
+create this tool) and Native to sRGB lut. You can use it by simply starting the application and selecting the desired 
+preset. If the monitor device id is not 0, click on the "Edit" button and manually edit the device number.
+
+OBS: Make sure to set the monitor mode to "Native" (not applicable in HDR).
 
 ![tray-screenshot.png](images/tray-screenshot.png)
 
@@ -82,12 +96,22 @@ Xiaomi Presets:
   - Slightly increase red gain on HDR mode;
   - This one is personal preference and may not apply to your config.
 
-## Running
-After having your project build and configuration in place, run the executable. It will start running in the background
-and will appear in the system tray.
+---
+# Contributing
+
+## Development Checks
+
+Install the local commit hooks with:
 
 ```shell
-color-lut-tweaks.exe
+winget install --id j178.Prek
+prek install
+```
+
+Run the same checks used by GitHub PR checks with:
+
+```shell
+prek run --all-files
 ```
 
 ---
