@@ -2,18 +2,14 @@
   {
     "device": 0,
     "mode": "sdr",
-    "lut": "Xiaomi G Pro 27i SDR (D65 Gamma22) (chimolog)",
-    "adjust": {
-      "gain": [0.98, 1, 1]
-    }
+    "lut": "Xiaomi G Pro 27i SDR (D65 Gamma22) (chimolog)"
   },
   {
     "device": 0,
     "mode": "hdr",
     "lut": "Xiaomi G Pro 27i HDR (D65 PQ) (chimolog)",
     "adjust": {
-      "contrast": 1.2,
-      "gain": [1.01, 1, 1]
+      "contrast": 1.2
     }
   }
 ]
