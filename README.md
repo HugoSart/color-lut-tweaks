@@ -80,43 +80,29 @@ This project also includes a default Xiaomi G Pro 27i HDR EOTF curve correction 
 create this tool) and Native to sRGB lut. You can use it by simply starting the application and selecting the desired 
 preset. If the monitor device id is not 0, click on the "Edit" button and manually edit the device number.
 
-OBS: Make sure to set the monitor mode to "Native" (not applicable in HDR).
-
-![tray-screenshot.png](images/tray-screenshot.png)
-
-Xiaomi Presets:
-- Xiaomi G Pro 27i CHIMOLOG Calibration:
-  - Apply Native -> SRGB color conversion for SDR usage;
-  - Apply EOTF correction for HDR usage;
-- Xiaomi G Pro 27i CHIMOLOG Calibration (More Contrast):
-  - Same as above;
-  - Boost contrast;
-- Xiaomi G Pro 27i CHIMOLOG Calibration (Personal Preference):
-  - Same as above;
-  - Decrease red gain on SDR mode;
-  - Slightly increase red gain on HDR mode;
-  - This one is personal preference and may not apply to your config.
+Check the [Xiaomi G Pro 27i Guide](./docs/guide-xiaomi-g-pro-27i.md) docs for more details.
 
 ---
 # Contributing
 
-## Development Checks
+## Requirements
 
-Install the local commit hooks with:
+Required tools for development:
+- [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html): Required to build and run the project in
+  development mode.
+- [prek](https://github.com/j178/prek): Used for development quality checks.
 
-```shell
-winget install --id j178.Prek
-prek install
-```
+## Development Commands
 
-Run the same checks used by GitHub PR checks with:
-
-```shell
-prek run --all-files
-```
+Useful commands for development:
+- `cargo build`: Build the project.
+- `cargo run`: Run the project in system tray mode.
+- `cargo run -- <args>`: Run the project in CLI mode.
+- `prek run --all-files`: Run code quality checks.
 
 ---
-## LUT Format
+## Resources
+### LUT Format
 
 **LUT** stands for "Look Up Table", and in this context it refers to a set of gamma ramps that can be applied to a color
 space.
@@ -132,3 +118,6 @@ That means:
 - 3 channels: red, green, blue
 - 256 `u16` entries per channel
 - little-endian encoding
+
+3D LUT files `.cube` are also supported, but they are converted to `.lut` files on the fly. So, if you have a 3D LUT
+file that is complex, the result might be a bit different from the original.
