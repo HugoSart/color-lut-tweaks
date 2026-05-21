@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 fn main() {
     println!("cargo:rerun-if-changed=luts");
     println!("cargo:rerun-if-changed=configs");
+    println!("cargo:rerun-if-changed=profiles");
     println!("cargo:rerun-if-changed=icon.ico");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
@@ -14,6 +15,7 @@ fn main() {
     copy_configs(&manifest_dir, &profile_dir);
     copy_icon(&manifest_dir, &profile_dir);
     copy_luts(&manifest_dir, &profile_dir);
+    copy_profiles(&manifest_dir, &profile_dir);
 }
 
 fn copy_luts(manifest_dir: &Path, profile_dir: &Path) {
@@ -82,6 +84,27 @@ fn copy_configs(manifest_dir: &Path, profile_dir: &Path) {
     }
 }
 
+fn copy_profiles(manifest_dir: &Path, profile_dir: &Path) {
+    let source_dir = manifest_dir.join("profiles");
+    if !source_dir.is_dir() {
+        return;
+    }
+
+    let destination_dir = profile_dir.join("profiles");
+    fs::create_dir_all(&destination_dir).expect("create target profiles directory");
+    for entry in fs::read_dir(&source_dir).expect("read profiles directory") {
+        let entry = entry.expect("read profiles entry");
+        let path = entry.path();
+        if !is_profile_asset(&path) {
+            continue;
+        }
+
+        println!("cargo:rerun-if-changed={}", path.display());
+        let destination = destination_dir.join(path.file_name().expect("profile file name"));
+        fs::copy(&path, &destination).expect("copy profile into target profile directory");
+    }
+}
+
 fn profile_target_dir() -> PathBuf {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
 
@@ -109,4 +132,14 @@ fn is_config_asset(path: &Path) -> bool {
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+}
+
+fn is_profile_asset(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("icc") || extension.eq_ignore_ascii_case("icm")
+            })
 }

@@ -40,6 +40,7 @@ jobs:
           Copy-Item target/release/icon.ico dist/color-lut-tweaks/
           Copy-Item target/release/configs dist/color-lut-tweaks/configs -Recurse
           Copy-Item target/release/luts dist/color-lut-tweaks/luts -Recurse
+          Copy-Item target/release/profiles dist/color-lut-tweaks/profiles -Recurse
           Compress-Archive -Path dist/color-lut-tweaks -DestinationPath dist/color-lut-tweaks-windows-x64.zip
 
       - name: Upload release asset

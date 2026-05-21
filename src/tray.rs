@@ -375,6 +375,9 @@ mod windows_tray {
         }
 
         let devices_header = wide("Devices");
+        let help_header = wide("Help: Tool is not working?");
+        let help_auto_color = wide("Disable Windows \"Auto Color Management\"");
+        let help_nvidia_reference = wide("Disable NVIDIA \"Override to reference mode\"");
         let directory_header = wide("Directory");
         let open_explorer = wide("Open In Explorer");
         let open_config_label = wide("Open Configuration File");
@@ -401,6 +404,15 @@ mod windows_tray {
         unsafe {
             AppendMenuW(menu, section_header_flags(), 0, devices_header.as_ptr());
             append_device_rows(menu);
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            AppendMenuW(menu, section_header_flags(), 0, help_header.as_ptr());
+            AppendMenuW(menu, section_header_flags(), 0, help_auto_color.as_ptr());
+            AppendMenuW(
+                menu,
+                section_header_flags(),
+                0,
+                help_nvidia_reference.as_ptr(),
+            );
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, directory_header.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
