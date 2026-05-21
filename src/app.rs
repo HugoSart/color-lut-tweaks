@@ -207,7 +207,7 @@ pub fn run_tweaks_until(
     options: RuntimeOptions,
     should_stop: impl Fn() -> bool,
 ) -> Result<()> {
-    let rules = start_rules(platform, tweaks)?;
+    let rules = start_rules(tweaks)?;
     if rules.is_empty() {
         loop {
             if should_stop() {
@@ -237,12 +237,7 @@ struct TweakRuntime {
 
 impl TweakRuntime {
     fn capture_original_ramps(&mut self, platform: &impl DisplayPlatform) -> Result<()> {
-        for device_index in start_device_indices(&self.rules) {
-            self.original_ramps
-                .insert(device_index, platform.capture_gamma_ramp(device_index)?);
-        }
-
-        Ok(())
+        self.capture_available_original_ramps(platform)
     }
 
     fn run_until(
@@ -271,13 +266,22 @@ impl TweakRuntime {
     }
 
     fn tick(&mut self, platform: &impl DisplayPlatform) -> Result<()> {
+        self.capture_available_original_ramps(platform)?;
+
         for device_index in self.original_ramps.keys().copied().collect::<Vec<_>>() {
+            if !device_index_available(platform, device_index)? {
+                self.active_rules.remove(&device_index);
+                continue;
+            }
+
             let hdr_enabled = platform.hdr_enabled(device_index)?;
             let active_mode = ColorMode::from_hdr_enabled(hdr_enabled);
-            let desired_rule = self
-                .rules
-                .iter()
-                .position(|rule| rule.device_index == device_index && rule.mode == active_mode);
+            let desired_rule = self.rules.iter().position(|rule| {
+                rule.mode == active_mode
+                    && rule
+                        .active_device_indices(platform)
+                        .is_ok_and(|indices| indices.contains(&device_index))
+            });
             let active_rule = self.active_rules.get(&device_index).copied().flatten();
 
             if desired_rule == active_rule {
@@ -316,6 +320,22 @@ impl TweakRuntime {
         Ok(())
     }
 
+    fn capture_available_original_ramps(&mut self, platform: &impl DisplayPlatform) -> Result<()> {
+        for rule in &self.rules {
+            for device_index in rule.active_device_indices(platform)? {
+                if self.original_ramps.contains_key(&device_index) {
+                    continue;
+                }
+
+                self.original_ramps
+                    .insert(device_index, platform.capture_gamma_ramp(device_index)?);
+                println!("Device {device_index}: monitor available; captured original gamma ramp");
+            }
+        }
+
+        Ok(())
+    }
+
     fn reapply_if_needed(
         &self,
         platform: &impl DisplayPlatform,
@@ -344,6 +364,10 @@ impl TweakRuntime {
 
     fn restore_original_ramps(&self, platform: &impl DisplayPlatform) -> Result<()> {
         for (device_index, ramp) in &self.original_ramps {
+            if !device_index_available(platform, *device_index)? {
+                continue;
+            }
+
             platform.apply_gamma_ramp(*device_index, ramp)?;
         }
 
@@ -372,7 +396,7 @@ fn sleep_poll_interval(should_stop: impl Fn() -> bool) {
     }
 }
 
-fn start_rules(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) -> Result<Vec<StartRule>> {
+fn start_rules(tweaks: &[TweakOptions]) -> Result<Vec<StartRule>> {
     let mut rules = Vec::new();
 
     for (position, options) in tweaks.iter().enumerate() {
@@ -384,35 +408,29 @@ fn start_rules(platform: &impl DisplayPlatform, tweaks: &[TweakOptions]) -> Resu
         let ramp = load_adjusted_lut(path, options.adjust.as_ref())?;
         let mode = options.mode.unwrap_or(ColorMode::Hdr);
 
-        for device_index in target_device_indices(platform, options.device.as_ref())? {
-            rules.push(StartRule {
-                device_index,
-                mode,
-                path: path.clone(),
-                ramp: ramp.clone(),
-            });
-        }
+        rules.push(StartRule {
+            device: options.device.clone(),
+            mode,
+            path: path.clone(),
+            ramp,
+        });
     }
 
     Ok(rules)
 }
 
-fn start_device_indices(rules: &[StartRule]) -> Vec<usize> {
-    let mut device_indices = Vec::new();
-    for rule in rules {
-        if !device_indices.contains(&rule.device_index) {
-            device_indices.push(rule.device_index);
-        }
-    }
-    device_indices
-}
-
 #[derive(Clone, Debug)]
 struct StartRule {
-    device_index: usize,
+    device: Option<DeviceSelector>,
     mode: ColorMode,
     path: PathBuf,
     ramp: GammaRamp,
+}
+
+impl StartRule {
+    fn active_device_indices(&self, platform: &impl DisplayPlatform) -> Result<Vec<usize>> {
+        available_target_device_indices(platform, self.device.as_ref())
+    }
 }
 
 fn target_device_indices(
@@ -442,6 +460,45 @@ fn target_device_indices(
         }
         None => Ok((0..platform.active_device_count()?).collect()),
     }
+}
+
+fn available_target_device_indices(
+    platform: &impl DisplayPlatform,
+    device: Option<&DeviceSelector>,
+) -> Result<Vec<usize>> {
+    match device {
+        Some(DeviceSelector::Index(index)) => {
+            if device_index_available(platform, *index)? {
+                Ok(vec![*index])
+            } else {
+                Ok(Vec::new())
+            }
+        }
+        Some(DeviceSelector::Name(name)) => {
+            let Ok(count) = platform.active_device_count() else {
+                return Ok(Vec::new());
+            };
+            let mut indices = Vec::new();
+            for index in 0..count {
+                let candidate = platform.device_name(index)?;
+                let label = platform.device_label(index)?;
+                if device_names_match(&candidate, name) || device_names_match(&label, name) {
+                    indices.push(index);
+                }
+            }
+            Ok(indices)
+        }
+        None => {
+            let Ok(count) = platform.active_device_count() else {
+                return Ok(Vec::new());
+            };
+            Ok((0..count).collect())
+        }
+    }
+}
+
+fn device_index_available(platform: &impl DisplayPlatform, device_index: usize) -> Result<bool> {
+    Ok(device_index < platform.active_device_count().unwrap_or(0))
 }
 
 fn device_names_match(candidate: &str, requested: &str) -> bool {

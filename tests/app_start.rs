@@ -1,3 +1,4 @@
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::{env, fs};
 
@@ -41,6 +42,29 @@ fn empty_tweak_list_is_valid() {
 #[test]
 fn runtime_options_default_to_force_enabled() {
     assert!(RuntimeOptions::default().force);
+}
+
+#[test]
+fn start_waits_until_configured_monitor_is_available() {
+    let platform = MonitorAvailableAfterFirstPoll {
+        count_checks: Cell::new(0),
+        applied: RefCell::new(Vec::new()),
+    };
+
+    app::run_tweaks_until(
+        &platform,
+        &[TweakOptions {
+            device: Some(device(0)),
+            mode: Some(ColorMode::Sdr),
+            lut: Some(PathBuf::from("identity")),
+            adjust: None,
+        }],
+        RuntimeOptions { force: false },
+        || !platform.applied.borrow().is_empty(),
+    )
+    .unwrap();
+
+    assert_eq!(platform.applied.borrow()[0], (0, GammaRamp::identity()));
 }
 
 #[test]
@@ -181,6 +205,36 @@ impl DisplayPlatform for EmptyDisplayPlatform {
 
     fn apply_gamma_ramp(&self, _device_index: usize, _ramp: &GammaRamp) -> Result<()> {
         unreachable!("empty tweak list does not apply gamma")
+    }
+}
+
+struct MonitorAvailableAfterFirstPoll {
+    count_checks: Cell<usize>,
+    applied: RefCell<Vec<(usize, GammaRamp)>>,
+}
+
+impl DisplayPlatform for MonitorAvailableAfterFirstPoll {
+    fn active_device_count(&self) -> Result<usize> {
+        let checks = self.count_checks.get();
+        self.count_checks.set(checks + 1);
+        Ok(usize::from(checks > 0))
+    }
+
+    fn device_name(&self, device_index: usize) -> Result<String> {
+        Ok(format!(r"\\.\DISPLAY{}", device_index + 1))
+    }
+
+    fn hdr_enabled(&self, _device_index: usize) -> Result<bool> {
+        Ok(false)
+    }
+
+    fn capture_gamma_ramp(&self, _device_index: usize) -> Result<GammaRamp> {
+        Ok(GammaRamp::identity())
+    }
+
+    fn apply_gamma_ramp(&self, device_index: usize, ramp: &GammaRamp) -> Result<()> {
+        self.applied.borrow_mut().push((device_index, ramp.clone()));
+        Ok(())
     }
 }
 
