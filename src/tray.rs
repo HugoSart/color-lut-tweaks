@@ -152,38 +152,36 @@ mod windows_tray {
 
     #[derive(Clone, Debug)]
     enum CachedUpdateStatus {
-        Checking,
         Latest,
-        Available { version: String, url: String },
+        Available,
         Failed,
     }
 
     impl UpdateWorker {
         fn start(hwnd: Hwnd) -> Self {
             let shutdown = Arc::new(AtomicBool::new(false));
-            let status = Arc::new(Mutex::new(CachedUpdateStatus::Checking));
+            let status = Arc::new(Mutex::new(CachedUpdateStatus::Latest));
             let thread_shutdown = shutdown.clone();
             let thread_status = status.clone();
             let hwnd_value = hwnd as isize;
             let handle = thread::spawn(move || {
                 loop {
-                    if let Ok(mut status) = thread_status.lock() {
-                        *status = CachedUpdateStatus::Checking;
-                    }
-
                     let next_status = match updates::check_latest() {
                         Ok(UpdateCheck::Latest) => CachedUpdateStatus::Latest,
-                        Ok(UpdateCheck::Available { version, url }) => {
-                            CachedUpdateStatus::Available { version, url }
-                        }
+                        Ok(UpdateCheck::Available) => CachedUpdateStatus::Available,
                         Err(_) => CachedUpdateStatus::Failed,
                     };
+                    let should_check_again = !matches!(next_status, CachedUpdateStatus::Available);
 
                     if let Ok(mut status) = thread_status.lock() {
                         *status = next_status;
                     }
                     unsafe {
                         PostMessageW(hwnd_value as Hwnd, WM_UPDATE_CHECKED, 0, 0);
+                    }
+
+                    if !should_check_again {
+                        break;
                     }
 
                     if !wait_for_next_update_check(&thread_shutdown) {
@@ -376,12 +374,12 @@ mod windows_tray {
             self.update_worker
                 .as_ref()
                 .map(UpdateWorker::status)
-                .unwrap_or(CachedUpdateStatus::Failed)
+                .unwrap_or(CachedUpdateStatus::Latest)
         }
 
         fn update_url(&self) -> Option<String> {
             match self.update_status() {
-                CachedUpdateStatus::Available { url, .. } => Some(url),
+                CachedUpdateStatus::Available => Some(updates::RELEASES_PAGE_URL.to_string()),
                 CachedUpdateStatus::Latest => Some(updates::RELEASES_PAGE_URL.to_string()),
                 _ => None,
             }
@@ -513,7 +511,7 @@ mod windows_tray {
         let update_status = unsafe {
             state(hwnd)
                 .map(|state| state.update_status())
-                .unwrap_or(CachedUpdateStatus::Failed)
+                .unwrap_or(CachedUpdateStatus::Latest)
         };
         let (update_label, update_flags) = update_menu_item(&update_status);
         let update_label = wide(update_label);
@@ -724,11 +722,8 @@ mod windows_tray {
 
     fn update_menu_item(status: &CachedUpdateStatus) -> (String, u32) {
         match status {
-            CachedUpdateStatus::Checking => ("Checking for updates...".to_string(), MF_GRAYED),
             CachedUpdateStatus::Latest => ("Already in latest version".to_string(), MF_STRING),
-            CachedUpdateStatus::Available { version, .. } => {
-                (format!("Update available ({version})"), MF_STRING)
-            }
+            CachedUpdateStatus::Available => ("Update available".to_string(), MF_STRING),
             CachedUpdateStatus::Failed => ("Unable to check updates".to_string(), MF_GRAYED),
         }
     }
