@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::app::{self, AppliedTweak, ColorMode, DeviceSelector, TweakOptions};
 use crate::error::{Error, Result};
+use crate::logging;
 use crate::platform::SystemDisplayPlatform;
 
 pub enum Command {
@@ -62,7 +63,7 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
     match command {
         Command::LaunchTray => {
             crate::tray::launch(None)?;
-            println!("Started color-lut-tweaks tray");
+            print_info("Started color-lut-tweaks tray");
         }
         Command::Inspect(options) => {
             let tweaks = options.resolve()?;
@@ -73,11 +74,13 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             let tweaks = options.resolve_many()?;
             let report = app::apply_tweak_list(&platform, &tweaks)?;
             if report.is_empty() {
-                println!("No tweaks configured; nothing to apply");
+                print_info("No tweaks configured; nothing to apply");
             } else {
                 for applied in report.applied {
                     match applied {
-                        AppliedTweak::Lut(path) => println!("Applied gamma ramp from {path}"),
+                        AppliedTweak::Lut(path) => {
+                            print_info(format!("Applied gamma ramp from {path}"))
+                        }
                     }
                 }
             }
@@ -86,9 +89,12 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             let tweaks = options.resolve()?;
             app::reset_gamma(&platform, tweaks.device.as_ref())?;
             if let Some(device) = tweaks.device {
-                println!("Reset gamma ramp to identity on device {}", device.label());
+                print_info(format!(
+                    "Reset gamma ramp to identity on device {}",
+                    device.label()
+                ));
             } else {
-                println!("Reset gamma ramp to identity on all devices");
+                print_info("Reset gamma ramp to identity on all devices");
             }
         }
         Command::Watch(options) => {
@@ -96,14 +102,17 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             match tweaks.as_slice() {
                 [tweak] => {
                     if let Some(path) = &tweak.lut {
-                        println!("Watching HDR state for {}", path.display());
+                        print_info(format!("Watching HDR state for {}", path.display()));
                     } else {
-                        println!("Watching HDR state with no LUT configured");
+                        print_info("Watching HDR state with no LUT configured");
                     }
                     app::watch_tweaks(&platform, tweak)?;
                 }
                 _ => {
-                    println!("Watching HDR state from {} configured tweaks", tweaks.len());
+                    print_info(format!(
+                        "Watching HDR state from {} configured tweaks",
+                        tweaks.len()
+                    ));
                     app::start_tweaks(&platform, &tweaks)?;
                 }
             }
@@ -111,7 +120,7 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
         Command::Start(options) => {
             let config = options.config.unwrap_or(app::default_config_path()?);
             let tweaks = TweakOptions::list_from_config_file(&config)?;
-            println!("Starting from {}", config.display());
+            print_info(format!("Starting from {}", config.display()));
             app::start_tweaks(&platform, &tweaks)?;
         }
         Command::Tray(options) => {
@@ -124,19 +133,25 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             let config = options.config.unwrap_or(app::default_config_path()?);
             match crate::windows_settings::apply_from_config_file(&config)? {
                 crate::windows_settings::WindowsSettingsApply::NotConfigured => {
-                    println!("No recommended Windows settings configured")
+                    print_info("No recommended Windows settings configured")
                 }
                 crate::windows_settings::WindowsSettingsApply::AlreadyApplied => {
-                    println!("Recommended Windows settings already applied")
+                    print_info("Recommended Windows settings already applied")
                 }
                 crate::windows_settings::WindowsSettingsApply::Applied => {
-                    println!("Applied recommended Windows settings")
+                    print_info("Applied recommended Windows settings")
                 }
             }
         }
     }
 
     Ok(())
+}
+
+fn print_info(message: impl std::fmt::Display) {
+    let message = message.to_string();
+    logging::info(&message);
+    println!("{message}");
 }
 
 pub fn parse_command(args: &[String]) -> Result<Command> {

@@ -1,6 +1,7 @@
 pub mod app;
 pub mod cli;
 pub mod error;
+pub mod logging;
 pub mod lut;
 pub mod platform;
 pub mod startup;

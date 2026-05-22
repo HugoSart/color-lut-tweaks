@@ -14,6 +14,7 @@ mod windows_tray {
 
     use crate::app::{self, RuntimeOptions, TweakOptions};
     use crate::error::{Error, Result};
+    use crate::logging;
     use crate::platform::{DisplayPlatform, SystemDisplayPlatform};
     use crate::updates::{self, UpdateCheck};
 
@@ -70,6 +71,7 @@ mod windows_tray {
 
     pub fn launch(config: Option<PathBuf>) -> Result<()> {
         if instance_running() {
+            logging::info("tray launch skipped because an instance is already running");
             return Ok(());
         }
 
@@ -89,18 +91,21 @@ mod windows_tray {
             .spawn()
             .map_err(|source| Error::Io { path: None, source })?;
 
+        logging::info("started detached tray worker");
         Ok(())
     }
 
     pub fn run(config: Option<PathBuf>) -> Result<()> {
+        logging::info("tray worker starting");
         let Some(_instance) = SingleInstance::acquire()? else {
+            logging::info("tray worker exiting because another instance is already running");
             return Ok(());
         };
 
         let settings_path = default_settings_path()?;
         let mut settings = TraySettings::load(&settings_path)?;
         settings.preset = resolve_existing_preset(&settings.preset)?;
-        settings.start_with_windows = crate::startup::enabled().unwrap_or(false);
+        settings.start_with_windows = startup_enabled_or_log();
         settings.save(&settings_path)?;
         let config = config.unwrap_or_else(|| preset_config_path(&settings.preset));
 
@@ -121,9 +126,11 @@ mod windows_tray {
             }
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
             add_tray_icon(hwnd)?;
+            logging::info("tray worker started");
             message_loop()?;
         }
 
+        logging::info("tray worker stopped");
         Ok(())
     }
 
@@ -169,18 +176,25 @@ mod windows_tray {
                     let next_status = match updates::check_latest() {
                         Ok(UpdateCheck::Latest) => CachedUpdateStatus::Latest,
                         Ok(UpdateCheck::Available) => CachedUpdateStatus::Available,
-                        Err(_) => CachedUpdateStatus::Failed,
+                        Err(err) => {
+                            logging::warn(format!("update check failed: {err}"));
+                            CachedUpdateStatus::Failed
+                        }
                     };
                     let should_check_again = !matches!(next_status, CachedUpdateStatus::Available);
 
-                    if let Ok(mut status) = thread_status.lock() {
-                        *status = next_status;
+                    match thread_status.lock() {
+                        Ok(mut status) => *status = next_status,
+                        Err(_) => logging::error("update worker status mutex is poisoned"),
                     }
                     unsafe {
-                        PostMessageW(hwnd_value as Hwnd, WM_UPDATE_CHECKED, 0, 0);
+                        if PostMessageW(hwnd_value as Hwnd, WM_UPDATE_CHECKED, 0, 0) == 0 {
+                            logging::warn("failed to notify tray window after update check");
+                        }
                     }
 
                     if !should_check_again {
+                        logging::info("update available; stopping update checks for this session");
                         break;
                     }
 
@@ -201,13 +215,18 @@ mod windows_tray {
             self.status
                 .lock()
                 .map(|status| status.clone())
-                .unwrap_or(CachedUpdateStatus::Failed)
+                .unwrap_or_else(|_| {
+                    logging::error("update worker status mutex is poisoned");
+                    CachedUpdateStatus::Failed
+                })
         }
 
         fn stop(&mut self) {
             self.shutdown.store(true, Ordering::Relaxed);
-            if let Some(handle) = self.handle.take() {
-                let _ = handle.join();
+            if let Some(handle) = self.handle.take()
+                && handle.join().is_err()
+            {
+                logging::error("update worker thread panicked");
             }
         }
     }
@@ -228,6 +247,12 @@ mod windows_tray {
     impl TrayState {
         fn start_worker(&mut self, hwnd: Hwnd) -> Result<()> {
             let tweaks = TweakOptions::list_from_config_file(&self.config)?;
+            logging::info(format!(
+                "starting color runtime from {} with {} tweak(s); force={}",
+                self.config.display(),
+                tweaks.len(),
+                self.force
+            ));
             let shutdown = Arc::new(AtomicBool::new(false));
             let (tx, rx) = mpsc::channel();
             let hwnd_value = hwnd as isize;
@@ -239,9 +264,18 @@ mod windows_tray {
                     app::run_tweaks_until(&platform, &tweaks, RuntimeOptions { force }, || {
                         thread_shutdown.load(Ordering::Relaxed)
                     });
-                let _ = tx.send(result);
+                if let Err(err) = &result {
+                    logging::error(format!("color runtime stopped with error: {err}"));
+                } else {
+                    logging::info("color runtime stopped");
+                }
+                if tx.send(result).is_err() {
+                    logging::warn("color runtime result could not be sent to tray window");
+                }
                 unsafe {
-                    PostMessageW(hwnd_value as Hwnd, WM_WORKER_DONE, 0, 0);
+                    if PostMessageW(hwnd_value as Hwnd, WM_WORKER_DONE, 0, 0) == 0 {
+                        logging::warn("failed to notify tray window after color runtime stopped");
+                    }
                 }
             });
 
@@ -260,13 +294,19 @@ mod windows_tray {
             };
 
             worker.shutdown.store(true, Ordering::Relaxed);
-            if let Some(handle) = worker.handle.take() {
-                let _ = handle.join();
+            if let Some(handle) = worker.handle.take()
+                && handle.join().is_err()
+            {
+                logging::error("color runtime thread panicked");
             }
 
             match worker.result.try_recv() {
                 Ok(result) => result,
-                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => Ok(()),
+                Err(mpsc::TryRecvError::Empty) => Ok(()),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    logging::warn("color runtime stopped without sending a result");
+                    Ok(())
+                }
             }
         }
 
@@ -274,9 +314,11 @@ mod windows_tray {
             if self.enabled {
                 self.stop_worker()?;
                 self.enabled = false;
+                logging::info("color adjustments disabled");
             } else {
                 self.start_worker(hwnd)?;
                 self.enabled = true;
+                logging::info("color adjustments enabled");
             }
 
             self.settings.enabled = self.enabled;
@@ -286,6 +328,7 @@ mod windows_tray {
 
         fn toggle_force(&mut self, hwnd: Hwnd) -> Result<()> {
             self.force = !self.force;
+            logging::info(format!("force mode set to {}", self.force));
             self.settings.force = self.force;
             self.save_settings()?;
             if self.enabled {
@@ -299,9 +342,11 @@ mod windows_tray {
             if crate::startup::enabled()? {
                 crate::startup::disable()?;
                 self.startup_enabled = false;
+                logging::info("start with Windows disabled");
             } else {
                 crate::startup::enable()?;
                 self.startup_enabled = true;
+                logging::info("start with Windows enabled");
             }
 
             self.settings.start_with_windows = self.startup_enabled;
@@ -312,6 +357,10 @@ mod windows_tray {
         fn toggle_auto_apply_color_settings(&mut self) -> Result<()> {
             self.settings.automatically_apply_color_settings =
                 !self.settings.automatically_apply_color_settings;
+            logging::info(format!(
+                "automatically apply recommended settings set to {}",
+                self.settings.automatically_apply_color_settings
+            ));
             self.save_settings()
         }
 
@@ -322,6 +371,7 @@ mod windows_tray {
 
             self.settings.preset = preset;
             self.config = preset_config_path(&self.settings.preset);
+            logging::info(format!("selected preset {}", self.settings.preset));
             self.save_settings()?;
             if self.settings.automatically_apply_color_settings {
                 apply_recommended_color_settings(&self.config)?;
@@ -336,7 +386,11 @@ mod windows_tray {
             {
                 self.enabled = false;
                 self.settings.enabled = false;
-                let _ = self.save_settings();
+                if let Err(save_err) = self.save_settings() {
+                    logging::error(format!(
+                        "failed to persist disabled state after runtime start failure: {save_err}"
+                    ));
+                }
                 return Err(err);
             }
 
@@ -363,8 +417,10 @@ mod windows_tray {
                 )),
             };
 
-            if let Some(handle) = worker.handle.take() {
-                let _ = handle.join();
+            if let Some(handle) = worker.handle.take()
+                && handle.join().is_err()
+            {
+                logging::error("color runtime thread panicked");
             }
             self.enabled = false;
             result
@@ -502,7 +558,10 @@ mod windows_tray {
         let color_settings_header = wide("Color Settings");
         let auto_apply_color_settings = wide("Automatically apply recommended settings");
         let apply_windows_settings = wide("Apply Recommended Windows Settings");
-        let presets = preset_items().unwrap_or_else(|_| Vec::new());
+        let presets = preset_items().unwrap_or_else(|err| {
+            logging::warn(format!("failed to read presets: {err}"));
+            Vec::new()
+        });
         let presets_label = wide("Presets");
         let enabled = wide("Enabled");
         let force = wide("Force");
@@ -519,7 +578,7 @@ mod windows_tray {
         let quit = wide("Quit");
         let (enabled_flags, force_flags, startup_flags, auto_apply_color_settings_flags) =
             if let Some(state) = unsafe { state(hwnd) } {
-                state.startup_enabled = crate::startup::enabled().unwrap_or(false);
+                state.startup_enabled = startup_enabled_or_log();
                 (
                     checked_flag(state.enabled),
                     checked_flag(state.force),
@@ -726,6 +785,13 @@ mod windows_tray {
             CachedUpdateStatus::Available => ("Update available".to_string(), MF_STRING),
             CachedUpdateStatus::Failed => ("Unable to check updates".to_string(), MF_GRAYED),
         }
+    }
+
+    fn startup_enabled_or_log() -> bool {
+        crate::startup::enabled().unwrap_or_else(|err| {
+            logging::warn(format!("failed to read start with Windows state: {err}"));
+            false
+        })
     }
 
     unsafe fn append_device_rows(menu: Hmenu) {
@@ -941,9 +1007,17 @@ mod windows_tray {
 
     fn apply_recommended_color_settings(config: &std::path::Path) -> Result<()> {
         if !crate::windows_settings::needs_elevated_apply(config)? {
+            logging::info(format!(
+                "recommended Windows settings already applied for {}",
+                config.display()
+            ));
             return Ok(());
         }
 
+        logging::info(format!(
+            "requesting elevation to apply recommended Windows settings from {}",
+            config.display()
+        ));
         let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
         let parameters = format!(
             "apply-windows-settings --config {}",
@@ -1010,10 +1084,15 @@ mod windows_tray {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         }
         let mut state = unsafe { Box::from_raw(state_ptr) };
-        let _ = state.stop_worker();
+        if let Err(err) = state.stop_worker() {
+            logging::error(format!(
+                "failed to stop color runtime during cleanup: {err}"
+            ));
+        }
         if let Some(mut worker) = state.update_worker.take() {
             worker.stop();
         }
+        logging::info("tray cleanup finished");
     }
 
     unsafe fn add_tray_icon(hwnd: Hwnd) -> Result<()> {
@@ -1083,6 +1162,7 @@ mod windows_tray {
     }
 
     unsafe fn show_error(hwnd: Hwnd, message: &str) {
+        logging::error(message);
         let title = wide(APP_NAME);
         let message = wide(message);
         unsafe {

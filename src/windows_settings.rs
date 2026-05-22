@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::app::TweakOptions;
 use crate::error::{Error, Result};
+use crate::logging;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowsSettingsApply {
@@ -30,11 +31,15 @@ pub fn apply_from_tweaks(tweaks: &[TweakOptions]) -> Result<WindowsSettingsApply
     };
 
     if auto_color_management_matches(acm)? {
+        logging::info("recommended Windows settings are already applied");
         return Ok(WindowsSettingsApply::AlreadyApplied);
     }
 
+    logging::info(format!("applying Windows auto color management={acm}"));
     set_auto_color_management(acm)?;
+    logging::info("restarting monitor devices after Windows color setting change");
     restart_monitor_devices()?;
+    logging::info("recommended Windows settings applied");
     Ok(WindowsSettingsApply::Applied)
 }
 

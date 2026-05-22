@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
 use crate::error::{Error, Result};
+use crate::logging;
 use crate::lut::{CHANNELS, Channel, ENTRIES, GammaRamp, LUT_SIZE};
 use crate::platform::DisplayPlatform;
 
@@ -135,10 +137,10 @@ pub fn watch_tweaks(platform: &impl DisplayPlatform, tweaks: &TweakOptions) -> R
             for (position, device_index) in device_indices.iter().enumerate() {
                 let hdr_enabled = platform.hdr_enabled(*device_index)?;
                 if previous_states[position] != Some(hdr_enabled) {
-                    println!(
+                    report_info(format_args!(
                         "Device {device_index}: HDR {}; no LUT configured",
                         if hdr_enabled { "enabled" } else { "disabled" }
-                    );
+                    ));
                     previous_states[position] = Some(hdr_enabled);
                 }
             }
@@ -170,24 +172,24 @@ pub fn watch_mode(
             if mode_matches && !applied[position] {
                 platform.apply_gamma_ramp(*device_index, &ramp)?;
                 applied[position] = true;
-                println!(
+                report_info(format_args!(
                     "Device {device_index}: {} mode active; applied LUT",
                     mode.name()
-                );
+                ));
             } else if !mode_matches && applied[position] {
                 let (_, original_ramp) = &original_ramps[position];
                 platform.apply_gamma_ramp(*device_index, original_ramp)?;
                 applied[position] = false;
-                println!(
+                report_info(format_args!(
                     "Device {device_index}: {} mode inactive; restored previous gamma ramp",
                     mode.name()
-                );
+                ));
             } else if previous_hdr_states[position] != Some(hdr_enabled) {
-                println!(
+                report_info(format_args!(
                     "Device {device_index}: HDR {}; waiting for {} mode",
                     if hdr_enabled { "enabled" } else { "disabled" },
                     mode.name()
-                );
+                ));
             }
 
             previous_hdr_states[position] = Some(hdr_enabled);
@@ -286,7 +288,9 @@ impl TweakRuntime {
 
             if desired_rule == active_rule {
                 if let Err(err) = self.reapply_if_needed(platform, device_index, desired_rule) {
-                    println!("Device {device_index}: could not reapply tweak yet: {err}");
+                    report_warn(format_args!(
+                        "Device {device_index}: could not reapply tweak yet: {err}"
+                    ));
                 }
                 continue;
             }
@@ -295,17 +299,17 @@ impl TweakRuntime {
                 Some(rule_index) => {
                     let rule = &self.rules[rule_index];
                     if let Err(err) = platform.apply_gamma_ramp(device_index, &rule.ramp) {
-                        println!(
+                        report_warn(format_args!(
                             "Device {device_index}: could not apply {} yet: {err}",
                             rule.path.display()
-                        );
+                        ));
                         continue;
                     }
-                    println!(
+                    report_info(format_args!(
                         "Device {device_index}: {} mode active; applied {}",
                         rule.mode.name(),
                         rule.path.display()
-                    );
+                    ));
                 }
                 None => {
                     let original_ramp =
@@ -315,15 +319,15 @@ impl TweakRuntime {
                             ))
                         })?;
                     if let Err(err) = platform.apply_gamma_ramp(device_index, original_ramp) {
-                        println!(
+                        report_warn(format_args!(
                             "Device {device_index}: could not restore previous gamma ramp yet: {err}"
-                        );
+                        ));
                         continue;
                     }
-                    println!(
+                    report_info(format_args!(
                         "Device {device_index}: no tweak configured for {}; restored previous gamma ramp",
                         active_mode.name()
-                    );
+                    ));
                 }
             }
 
@@ -341,14 +345,16 @@ impl TweakRuntime {
                 }
 
                 let Ok(original_ramp) = platform.capture_gamma_ramp(device_index) else {
-                    println!(
+                    report_warn(format_args!(
                         "Device {device_index}: monitor detected but gamma ramp is not available yet"
-                    );
+                    ));
                     continue;
                 };
 
                 self.original_ramps.insert(device_index, original_ramp);
-                println!("Device {device_index}: monitor available; captured original gamma ramp");
+                report_info(format_args!(
+                    "Device {device_index}: monitor available; captured original gamma ramp"
+                ));
             }
         }
 
@@ -372,10 +378,10 @@ impl TweakRuntime {
         let current_ramp = platform.capture_gamma_ramp(device_index)?;
         if current_ramp != rule.ramp {
             platform.apply_gamma_ramp(device_index, &rule.ramp)?;
-            println!(
+            report_info(format_args!(
                 "Device {device_index}: reapplied {} after gamma ramp changed",
                 rule.path.display()
-            );
+            ));
         }
 
         Ok(())
@@ -517,7 +523,15 @@ fn available_target_device_indices(
 }
 
 fn device_index_available(platform: &impl DisplayPlatform, device_index: usize) -> Result<bool> {
-    Ok(device_index < platform.active_device_count().unwrap_or(0))
+    match platform.active_device_count() {
+        Ok(count) => Ok(device_index < count),
+        Err(err) => {
+            logging::warn(format!(
+                "could not read active display count while checking device {device_index}: {err}"
+            ));
+            Ok(false)
+        }
+    }
 }
 
 fn device_names_match(candidate: &str, requested: &str) -> bool {
@@ -525,6 +539,18 @@ fn device_names_match(candidate: &str, requested: &str) -> bool {
         || candidate
             .strip_prefix(r"\\.\")
             .is_some_and(|candidate| candidate.eq_ignore_ascii_case(requested))
+}
+
+fn report_info(message: fmt::Arguments<'_>) {
+    let message = message.to_string();
+    logging::info(&message);
+    println!("{message}");
+}
+
+fn report_warn(message: fmt::Arguments<'_>) {
+    let message = message.to_string();
+    logging::warn(&message);
+    println!("WARN  {message}");
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
