@@ -102,8 +102,9 @@ fn restart_monitor_devices() -> Result<()> {
 mod windows {
     use std::ffi::{OsStr, c_void};
     use std::os::windows::ffi::OsStrExt;
-    use std::process::Command;
     use std::ptr;
+    use std::thread;
+    use std::time::Duration;
 
     use crate::error::{Error, Result};
 
@@ -117,6 +118,18 @@ mod windows {
     const ACM_VALUE_NAME: &str = "AutoColorManagementEnabled";
     const MONITOR_DATA_STORE: &str =
         r"SYSTEM\CurrentControlSet\Control\GraphicsDrivers\MonitorDataStore";
+    const GUID_DEVCLASS_MONITOR: Guid = Guid {
+        data1: 0x4d36e96e,
+        data2: 0xe325,
+        data3: 0x11ce,
+        data4: [0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18],
+    };
+    const DIGCF_PRESENT: u32 = 0x00000002;
+    const DIF_PROPERTYCHANGE: u32 = 0x00000012;
+    const DICS_ENABLE: u32 = 0x00000001;
+    const DICS_DISABLE: u32 = 0x00000002;
+    const DICS_FLAG_GLOBAL: u32 = 0x00000001;
+    const MONITOR_RESTART_DELAY: Duration = Duration::from_secs(2);
 
     pub fn auto_color_management_matches(enabled: bool) -> Result<bool> {
         let desired = u32::from(enabled);
@@ -144,35 +157,64 @@ mod windows {
     }
 
     pub fn restart_monitor_devices() -> Result<()> {
-        let script = r#"
-$ErrorActionPreference = "Stop"
-$devices = @(Get-PnpDevice -Class Monitor -PresentOnly)
-if ($devices.Count -eq 0) {
-    throw "No present monitor PnP devices were found."
-}
-foreach ($device in $devices) {
-    Disable-PnpDevice -InstanceId $device.InstanceId -Confirm:$false
-    Start-Sleep -Seconds 2
-    Enable-PnpDevice -InstanceId $device.InstanceId -Confirm:$false
-}
-"#;
+        let devices = MonitorDevices::present()?;
+        let mut restarted = 0;
+        let mut index = 0;
 
-        let status = Command::new("powershell.exe")
-            .arg("-NoProfile")
-            .arg("-ExecutionPolicy")
-            .arg("Bypass")
-            .arg("-Command")
-            .arg(script)
-            .status()
-            .map_err(|source| Error::Io { path: None, source })?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err(Error::platform(format!(
-                "failed to restart monitor devices; powershell exited with {status}"
-            )))
+        while let Some(mut device) = devices.device_at(index)? {
+            set_device_enabled(devices.handle, &mut device, false)?;
+            thread::sleep(MONITOR_RESTART_DELAY);
+            set_device_enabled(devices.handle, &mut device, true)?;
+            restarted += 1;
+            index += 1;
         }
+
+        if restarted == 0 {
+            return Err(Error::platform("no present monitor PnP devices were found"));
+        }
+
+        Ok(())
+    }
+
+    fn set_device_enabled(
+        devices: Hdevinfo,
+        device: &mut SpDevinfoData,
+        enabled: bool,
+    ) -> Result<()> {
+        let state_change = if enabled { DICS_ENABLE } else { DICS_DISABLE };
+        let action = if enabled { "enable" } else { "disable" };
+        let mut params = SpPropchangeParams {
+            class_install_header: SpClassinstallHeader {
+                cb_size: size_of::<SpClassinstallHeader>() as u32,
+                install_function: DIF_PROPERTYCHANGE,
+            },
+            state_change,
+            scope: DICS_FLAG_GLOBAL,
+            hw_profile: 0,
+        };
+
+        let ok = unsafe {
+            SetupDiSetClassInstallParamsW(
+                devices,
+                device,
+                (&mut params as *mut SpPropchangeParams).cast::<SpClassinstallHeader>(),
+                size_of::<SpPropchangeParams>() as u32,
+            )
+        };
+        if ok == 0 {
+            return Err(last_error(&format!(
+                "SetupDiSetClassInstallParamsW failed while trying to {action} monitor device"
+            )));
+        }
+
+        let ok = unsafe { SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, devices, device) };
+        if ok == 0 {
+            return Err(last_error(&format!(
+                "SetupDiCallClassInstaller failed while trying to {action} monitor device"
+            )));
+        }
+
+        Ok(())
     }
 
     fn read_monitor_acm_states() -> Result<Vec<Option<u32>>> {
@@ -187,6 +229,59 @@ foreach ($device in $devices) {
             states.push(monitor.query_dword(ACM_VALUE_NAME)?);
         }
         Ok(states)
+    }
+
+    struct MonitorDevices {
+        handle: Hdevinfo,
+    }
+
+    impl MonitorDevices {
+        fn present() -> Result<Self> {
+            let handle = unsafe {
+                SetupDiGetClassDevsW(
+                    &GUID_DEVCLASS_MONITOR,
+                    ptr::null(),
+                    ptr::null_mut(),
+                    DIGCF_PRESENT,
+                )
+            };
+
+            if handle == INVALID_HANDLE_VALUE {
+                return Err(last_error(
+                    "SetupDiGetClassDevsW failed for monitor devices",
+                ));
+            }
+
+            Ok(Self { handle })
+        }
+
+        fn device_at(&self, index: u32) -> Result<Option<SpDevinfoData>> {
+            let mut device = SpDevinfoData {
+                cb_size: size_of::<SpDevinfoData>() as u32,
+                ..Default::default()
+            };
+            let ok = unsafe { SetupDiEnumDeviceInfo(self.handle, index, &mut device) };
+            if ok != 0 {
+                return Ok(Some(device));
+            }
+
+            let error = unsafe { GetLastError() } as i32;
+            if error == ERROR_NO_MORE_ITEMS {
+                Ok(None)
+            } else {
+                Err(Error::platform(format!(
+                    "SetupDiEnumDeviceInfo failed for monitor device {index} with status {error}"
+                )))
+            }
+        }
+    }
+
+    impl Drop for MonitorDevices {
+        fn drop(&mut self) {
+            unsafe {
+                SetupDiDestroyDeviceInfoList(self.handle);
+            }
+        }
     }
 
     struct RegKey(Hkey);
@@ -308,7 +403,47 @@ foreach ($device in $devices) {
             .collect()
     }
 
+    fn last_error(context: &str) -> Error {
+        Error::platform(format!("{context} with status {}", unsafe {
+            GetLastError()
+        }))
+    }
+
     type Hkey = *mut c_void;
+    type Hdevinfo = *mut c_void;
+    const INVALID_HANDLE_VALUE: Hdevinfo = -1isize as Hdevinfo;
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    struct Guid {
+        data1: u32,
+        data2: u16,
+        data3: u16,
+        data4: [u8; 8],
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    struct SpDevinfoData {
+        cb_size: u32,
+        class_guid: Guid,
+        dev_inst: u32,
+        reserved: usize,
+    }
+
+    #[repr(C)]
+    struct SpClassinstallHeader {
+        cb_size: u32,
+        install_function: u32,
+    }
+
+    #[repr(C)]
+    struct SpPropchangeParams {
+        class_install_header: SpClassinstallHeader,
+        state_change: u32,
+        scope: u32,
+        hw_profile: u32,
+    }
 
     #[link(name = "advapi32")]
     unsafe extern "system" {
@@ -346,5 +481,37 @@ foreach ($device in $devices) {
             data_size: u32,
         ) -> i32;
         fn RegCloseKey(key: Hkey) -> i32;
+    }
+
+    #[link(name = "setupapi")]
+    unsafe extern "system" {
+        fn SetupDiGetClassDevsW(
+            class_guid: *const Guid,
+            enumerator: *const u16,
+            hwnd_parent: *mut c_void,
+            flags: u32,
+        ) -> Hdevinfo;
+        fn SetupDiEnumDeviceInfo(
+            device_info_set: Hdevinfo,
+            member_index: u32,
+            device_info_data: *mut SpDevinfoData,
+        ) -> i32;
+        fn SetupDiSetClassInstallParamsW(
+            device_info_set: Hdevinfo,
+            device_info_data: *mut SpDevinfoData,
+            class_install_params: *mut SpClassinstallHeader,
+            class_install_params_size: u32,
+        ) -> i32;
+        fn SetupDiCallClassInstaller(
+            install_function: u32,
+            device_info_set: Hdevinfo,
+            device_info_data: *mut SpDevinfoData,
+        ) -> i32;
+        fn SetupDiDestroyDeviceInfoList(device_info_set: Hdevinfo) -> i32;
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetLastError() -> u32;
     }
 }
