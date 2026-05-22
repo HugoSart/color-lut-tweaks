@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/HugoSart/color-lut-tweaks/compare/v0.2.0...v0.2.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* Add help section. Hugo Sartori Moments ago ([#6](https://github.com/HugoSart/color-lut-tweaks/issues/6)) ([0c9a85b](https://github.com/HugoSart/color-lut-tweaks/commit/0c9a85b87b77d1a2bb51ba1065be73c97b7c4206))
+* Xiaomi G Pro 27i CHIMOLOG Calibration (Personal Preference).config.json gain field fix. Hugo Sartori Moments ago ([#4](https://github.com/HugoSart/color-lut-tweaks/issues/4)) ([bb4166d](https://github.com/HugoSart/color-lut-tweaks/commit/bb4166df6d6205c91fce345ddcd8d7a4fa5d6516))
+
 ## [0.2.0](https://github.com/HugoSart/color-lut-tweaks/compare/v0.1.1...v0.2.0) (2026-05-20)
 
 
