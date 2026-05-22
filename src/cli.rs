@@ -13,6 +13,7 @@ pub enum Command {
     Start(StartOptions),
     Tray(StartOptions),
     TrayWorker(StartOptions),
+    ApplyWindowsSettings(StartOptions),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -119,6 +120,20 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
         Command::TrayWorker(options) => {
             crate::tray::run(options.config)?;
         }
+        Command::ApplyWindowsSettings(options) => {
+            let config = options.config.unwrap_or(app::default_config_path()?);
+            match crate::windows_settings::apply_from_config_file(&config)? {
+                crate::windows_settings::WindowsSettingsApply::NotConfigured => {
+                    println!("No recommended Windows settings configured")
+                }
+                crate::windows_settings::WindowsSettingsApply::AlreadyApplied => {
+                    println!("Recommended Windows settings already applied")
+                }
+                crate::windows_settings::WindowsSettingsApply::Applied => {
+                    println!("Applied recommended Windows settings")
+                }
+            }
+        }
     }
 
     Ok(())
@@ -144,6 +159,9 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
         [command, rest @ ..] if command == "tray-worker" => Ok(Command::TrayWorker(
             parse_start_options("tray-worker", rest)?,
         )),
+        [command, rest @ ..] if command == "apply-windows-settings" => Ok(
+            Command::ApplyWindowsSettings(parse_start_options("apply-windows-settings", rest)?),
+        ),
         [first, ..] if first.starts_with('-') => Ok(Command::Watch(parse_options(args)?)),
         _ => Err(Error::InvalidArguments(expected_usage())),
     }
@@ -170,6 +188,7 @@ pub fn print_usage() {
     );
     eprintln!("  color-lut-tweaks start [--config <configs/Default.config.json>]");
     eprintln!("  color-lut-tweaks tray [--config <configs/Default.config.json>]");
+    eprintln!("  color-lut-tweaks apply-windows-settings [--config <configs/Default.config.json>]");
     eprintln!("  color-lut-tweaks");
 }
 

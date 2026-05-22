@@ -17,6 +17,7 @@ fn apply_without_mode_does_not_check_display_mode() {
             lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
             mode: None,
             adjust: None,
+            windows: Default::default(),
         },
     )
     .unwrap();
@@ -36,6 +37,7 @@ fn apply_with_mode_checks_display_mode() {
             lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
             mode: Some(ColorMode::Hdr),
             adjust: None,
+            windows: Default::default(),
         },
     )
     .unwrap();
@@ -56,6 +58,7 @@ fn apply_identity_lut_uses_generated_identity_ramp() {
             lut: Some(PathBuf::from("identity")),
             mode: None,
             adjust: None,
+            windows: Default::default(),
         },
     )
     .unwrap();
@@ -78,12 +81,14 @@ fn apply_tweak_list_applies_only_entries_matching_current_mode() {
                 lut: Some(PathBuf::from("identity")),
                 mode: Some(ColorMode::Sdr),
                 adjust: None,
+                windows: Default::default(),
             },
             TweakOptions {
                 device: Some(device(0)),
                 lut: Some(fixture("valid-xiaomi-27i-pro.lut")),
                 mode: Some(ColorMode::Hdr),
                 adjust: None,
+                windows: Default::default(),
             },
         ],
     )
@@ -111,6 +116,7 @@ fn apply_adjusts_lut_before_applying_gamma_ramp() {
                 gain: Some([1.0, 0.5, 1.0]),
                 ..AdjustOptions::default()
             }),
+            windows: Default::default(),
         },
     )
     .unwrap();
@@ -136,6 +142,7 @@ fn apply_brightness_adjustment_keeps_ramp_valid() {
                 brightness: Some(0.1),
                 ..AdjustOptions::default()
             }),
+            windows: Default::default(),
         },
     )
     .unwrap();
@@ -169,6 +176,7 @@ fn apply_can_target_device_by_name() {
             lut: Some(PathBuf::from("identity")),
             mode: None,
             adjust: None,
+            windows: Default::default(),
         },
     )
     .unwrap();
@@ -194,6 +202,7 @@ fn apply_can_target_device_by_friendly_name() {
             lut: Some(PathBuf::from("identity")),
             mode: None,
             adjust: None,
+            windows: Default::default(),
         },
     )
     .unwrap();

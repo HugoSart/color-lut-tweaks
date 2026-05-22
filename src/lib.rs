@@ -6,5 +6,6 @@ pub mod platform;
 pub mod startup;
 pub mod tray;
 pub mod updates;
+pub mod windows_settings;
 
 pub use error::{Error, Result};

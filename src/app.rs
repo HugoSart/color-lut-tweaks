@@ -285,14 +285,22 @@ impl TweakRuntime {
             let active_rule = self.active_rules.get(&device_index).copied().flatten();
 
             if desired_rule == active_rule {
-                self.reapply_if_needed(platform, device_index, desired_rule)?;
+                if let Err(err) = self.reapply_if_needed(platform, device_index, desired_rule) {
+                    println!("Device {device_index}: could not reapply tweak yet: {err}");
+                }
                 continue;
             }
 
             match desired_rule {
                 Some(rule_index) => {
                     let rule = &self.rules[rule_index];
-                    platform.apply_gamma_ramp(device_index, &rule.ramp)?;
+                    if let Err(err) = platform.apply_gamma_ramp(device_index, &rule.ramp) {
+                        println!(
+                            "Device {device_index}: could not apply {} yet: {err}",
+                            rule.path.display()
+                        );
+                        continue;
+                    }
                     println!(
                         "Device {device_index}: {} mode active; applied {}",
                         rule.mode.name(),
@@ -306,7 +314,12 @@ impl TweakRuntime {
                                 "missing captured gamma ramp for device {device_index}"
                             ))
                         })?;
-                    platform.apply_gamma_ramp(device_index, original_ramp)?;
+                    if let Err(err) = platform.apply_gamma_ramp(device_index, original_ramp) {
+                        println!(
+                            "Device {device_index}: could not restore previous gamma ramp yet: {err}"
+                        );
+                        continue;
+                    }
                     println!(
                         "Device {device_index}: no tweak configured for {}; restored previous gamma ramp",
                         active_mode.name()
@@ -327,8 +340,14 @@ impl TweakRuntime {
                     continue;
                 }
 
-                self.original_ramps
-                    .insert(device_index, platform.capture_gamma_ramp(device_index)?);
+                let Ok(original_ramp) = platform.capture_gamma_ramp(device_index) else {
+                    println!(
+                        "Device {device_index}: monitor detected but gamma ramp is not available yet"
+                    );
+                    continue;
+                };
+
+                self.original_ramps.insert(device_index, original_ramp);
                 println!("Device {device_index}: monitor available; captured original gamma ramp");
             }
         }
@@ -518,6 +537,8 @@ pub struct TweakOptions {
     pub mode: Option<ColorMode>,
     #[serde(default)]
     pub adjust: Option<AdjustOptions>,
+    #[serde(default)]
+    pub windows: WindowsTweakOptions,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
@@ -601,6 +622,9 @@ impl TweakOptions {
         if overrides.adjust.is_some() {
             self.adjust = overrides.adjust.clone();
         }
+        if overrides.windows.auto_color_management.is_some() {
+            self.windows = overrides.windows.clone();
+        }
     }
 
     fn resolve_paths_relative_to(&mut self, config_path: &Path) {
@@ -613,6 +637,12 @@ impl TweakOptions {
             self.lut = Some(parent.join(lut));
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct WindowsTweakOptions {
+    #[serde(default, rename = "autoColorManagement")]
+    pub auto_color_management: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]

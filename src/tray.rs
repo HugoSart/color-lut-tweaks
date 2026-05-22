@@ -61,6 +61,8 @@ mod windows_tray {
     const MENU_STARTUP: usize = 1006;
     const MENU_QUIT: usize = 1007;
     const MENU_UPDATE: usize = 1008;
+    const MENU_APPLY_WINDOWS_SETTINGS: usize = 1009;
+    const MENU_AUTO_APPLY_COLOR_SETTINGS: usize = 1010;
     const MENU_PRESET_BASE: usize = 2000;
     const INSTANCE_MUTEX_NAME: &str = "Local\\ColorLutTweaksTray";
     const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -309,6 +311,12 @@ mod windows_tray {
             Ok(())
         }
 
+        fn toggle_auto_apply_color_settings(&mut self) -> Result<()> {
+            self.settings.automatically_apply_color_settings =
+                !self.settings.automatically_apply_color_settings;
+            self.save_settings()
+        }
+
         fn select_preset(&mut self, hwnd: Hwnd, preset: String) -> Result<()> {
             if self.settings.preset == preset {
                 return Ok(());
@@ -317,6 +325,9 @@ mod windows_tray {
             self.settings.preset = preset;
             self.config = preset_config_path(&self.settings.preset);
             self.save_settings()?;
+            if self.settings.automatically_apply_color_settings {
+                apply_recommended_color_settings(&self.config)?;
+            }
             self.reload(hwnd)
         }
 
@@ -490,6 +501,9 @@ mod windows_tray {
         let open_explorer = wide("Open In Explorer");
         let edit_config_label = wide("Edit");
         let color_header = wide("Color Adjustments");
+        let color_settings_header = wide("Color Settings");
+        let auto_apply_color_settings = wide("Automatically apply recommended settings");
+        let apply_windows_settings = wide("Apply Recommended Windows Settings");
         let presets = preset_items().unwrap_or_else(|_| Vec::new());
         let presets_label = wide("Presets");
         let enabled = wide("Enabled");
@@ -505,16 +519,17 @@ mod windows_tray {
         let update_label = wide(update_label);
         let startup = wide("Start with Windows");
         let quit = wide("Quit");
-        let (enabled_flags, force_flags, startup_flags) =
+        let (enabled_flags, force_flags, startup_flags, auto_apply_color_settings_flags) =
             if let Some(state) = unsafe { state(hwnd) } {
                 state.startup_enabled = crate::startup::enabled().unwrap_or(false);
                 (
                     checked_flag(state.enabled),
                     checked_flag(state.force),
                     checked_flag(state.startup_enabled),
+                    checked_flag(state.settings.automatically_apply_color_settings),
                 )
             } else {
-                (MF_STRING, MF_STRING, MF_STRING)
+                (MF_STRING, MF_STRING, MF_STRING, MF_STRING)
             };
         unsafe {
             AppendMenuW(menu, section_header_flags(), 0, devices_header.as_ptr());
@@ -565,6 +580,25 @@ mod windows_tray {
             AppendMenuW(menu, enabled_flags, MENU_ENABLED, enabled.as_ptr());
             AppendMenuW(menu, force_flags, MENU_FORCE, force.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            AppendMenuW(
+                menu,
+                section_header_flags(),
+                0,
+                color_settings_header.as_ptr(),
+            );
+            AppendMenuW(
+                menu,
+                auto_apply_color_settings_flags,
+                MENU_AUTO_APPLY_COLOR_SETTINGS,
+                auto_apply_color_settings.as_ptr(),
+            );
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                MENU_APPLY_WINDOWS_SETTINGS,
+                apply_windows_settings.as_ptr(),
+            );
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, application_header.as_ptr());
             AppendMenuW(menu, update_flags, MENU_UPDATE, update_label.as_ptr());
@@ -640,9 +674,23 @@ mod windows_tray {
                     show_error(hwnd, &err.to_string());
                 }
             },
+            MENU_AUTO_APPLY_COLOR_SETTINGS => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = state.toggle_auto_apply_color_settings()
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
             MENU_RELOAD => unsafe {
                 if let Some(state) = state(hwnd)
                     && let Err(err) = state.reload(hwnd)
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
+            MENU_APPLY_WINDOWS_SETTINGS => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = apply_recommended_color_settings(&state.config)
                 {
                     show_error(hwnd, &err.to_string());
                 }
@@ -814,6 +862,8 @@ mod windows_tray {
         force: bool,
         #[serde(default)]
         start_with_windows: bool,
+        #[serde(default = "default_true", rename = "automaticallyApplyColorSettings")]
+        automatically_apply_color_settings: bool,
     }
 
     impl Default for TraySettings {
@@ -823,6 +873,7 @@ mod windows_tray {
                 enabled: true,
                 force: true,
                 start_with_windows: false,
+                automatically_apply_color_settings: true,
             }
         }
     }
@@ -893,15 +944,35 @@ mod windows_tray {
         open_shell_target(url)
     }
 
+    fn apply_recommended_color_settings(config: &std::path::Path) -> Result<()> {
+        if !crate::windows_settings::needs_elevated_apply(config)? {
+            return Ok(());
+        }
+
+        let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
+        let parameters = format!(
+            "apply-windows-settings --config {}",
+            quote_shell_arg(&config.to_string_lossy())
+        );
+        shell_execute("runas", &exe.to_string_lossy(), Some(&parameters))
+    }
+
     fn open_shell_target(target: &str) -> Result<()> {
-        let operation = wide("open");
+        shell_execute("open", target, None)
+    }
+
+    fn shell_execute(operation: &str, target: &str, parameters: Option<&str>) -> Result<()> {
+        let operation = wide(operation);
         let target = wide(target);
+        let parameters = parameters.map(wide);
         let result = unsafe {
             ShellExecuteW(
                 ptr::null_mut(),
                 operation.as_ptr(),
                 target.as_ptr(),
-                ptr::null(),
+                parameters
+                    .as_ref()
+                    .map_or(ptr::null(), |parameters| parameters.as_ptr()),
                 ptr::null(),
                 SW_SHOWNORMAL,
             )
@@ -914,6 +985,10 @@ mod windows_tray {
         }
 
         Ok(())
+    }
+
+    fn quote_shell_arg(value: &str) -> String {
+        format!("\"{}\"", value.replace('"', "\\\""))
     }
 
     unsafe fn handle_worker_done(hwnd: Hwnd) {
