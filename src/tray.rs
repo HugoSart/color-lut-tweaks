@@ -484,7 +484,7 @@ mod windows_tray {
         }
 
         let devices_header = wide("Devices");
-        let help_header = wide("Help: Tool is not working?");
+        let help_header = wide("HELP: Is this tool not working for you?");
         let help_auto_color = wide("Disable Windows \"Auto Color Management\"");
         let help_nvidia_reference = wide("Disable NVIDIA \"Override to reference mode\"");
         let open_explorer = wide("Open In Explorer");
