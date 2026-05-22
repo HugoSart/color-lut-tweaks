@@ -8,17 +8,20 @@ mod windows_tray {
     use std::process::{Command, Stdio};
     use std::ptr;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, mpsc};
+    use std::sync::{Arc, Mutex, mpsc};
     use std::thread::{self, JoinHandle};
+    use std::time::Duration;
 
     use crate::app::{self, RuntimeOptions, TweakOptions};
     use crate::error::{Error, Result};
     use crate::platform::{DisplayPlatform, SystemDisplayPlatform};
+    use crate::updates::{self, UpdateCheck};
 
     const APP_NAME: &str = "Color LUT Tweaks";
     const WM_APP: u32 = 0x8000;
     const WM_TRAY_ICON: u32 = WM_APP + 1;
     const WM_WORKER_DONE: u32 = WM_APP + 2;
+    const WM_UPDATE_CHECKED: u32 = WM_APP + 3;
     const WM_DESTROY: u32 = 0x0002;
     const WM_RBUTTONUP: u32 = 0x0205;
     const WM_LBUTTONUP: u32 = 0x0202;
@@ -57,8 +60,11 @@ mod windows_tray {
     const MENU_RELOAD: usize = 1005;
     const MENU_STARTUP: usize = 1006;
     const MENU_QUIT: usize = 1007;
+    const MENU_UPDATE: usize = 1008;
     const MENU_PRESET_BASE: usize = 2000;
     const INSTANCE_MUTEX_NAME: &str = "Local\\ColorLutTweaksTray";
+    const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+    const UPDATE_CHECK_WAIT_SLICE: Duration = Duration::from_secs(1);
 
     pub fn launch(config: Option<PathBuf>) -> Result<()> {
         if instance_running() {
@@ -103,6 +109,7 @@ mod windows_tray {
                 force: settings.force,
                 startup_enabled: settings.start_with_windows,
                 worker: None,
+                update_worker: Some(UpdateWorker::start(hwnd)),
                 config,
                 settings_path,
                 settings,
@@ -123,6 +130,7 @@ mod windows_tray {
         force: bool,
         startup_enabled: bool,
         worker: Option<RuntimeWorker>,
+        update_worker: Option<UpdateWorker>,
         config: PathBuf,
         settings_path: PathBuf,
         settings: TraySettings,
@@ -132,6 +140,89 @@ mod windows_tray {
         shutdown: Arc<AtomicBool>,
         handle: Option<JoinHandle<()>>,
         result: mpsc::Receiver<Result<()>>,
+    }
+
+    struct UpdateWorker {
+        shutdown: Arc<AtomicBool>,
+        handle: Option<JoinHandle<()>>,
+        status: Arc<Mutex<CachedUpdateStatus>>,
+    }
+
+    #[derive(Clone, Debug)]
+    enum CachedUpdateStatus {
+        Checking,
+        Latest,
+        Available { version: String, url: String },
+        Failed,
+    }
+
+    impl UpdateWorker {
+        fn start(hwnd: Hwnd) -> Self {
+            let shutdown = Arc::new(AtomicBool::new(false));
+            let status = Arc::new(Mutex::new(CachedUpdateStatus::Checking));
+            let thread_shutdown = shutdown.clone();
+            let thread_status = status.clone();
+            let hwnd_value = hwnd as isize;
+            let handle = thread::spawn(move || {
+                loop {
+                    if let Ok(mut status) = thread_status.lock() {
+                        *status = CachedUpdateStatus::Checking;
+                    }
+
+                    let next_status = match updates::check_latest() {
+                        Ok(UpdateCheck::Latest) => CachedUpdateStatus::Latest,
+                        Ok(UpdateCheck::Available { version, url }) => {
+                            CachedUpdateStatus::Available { version, url }
+                        }
+                        Err(_) => CachedUpdateStatus::Failed,
+                    };
+
+                    if let Ok(mut status) = thread_status.lock() {
+                        *status = next_status;
+                    }
+                    unsafe {
+                        PostMessageW(hwnd_value as Hwnd, WM_UPDATE_CHECKED, 0, 0);
+                    }
+
+                    if !wait_for_next_update_check(&thread_shutdown) {
+                        break;
+                    }
+                }
+            });
+
+            Self {
+                shutdown,
+                handle: Some(handle),
+                status,
+            }
+        }
+
+        fn status(&self) -> CachedUpdateStatus {
+            self.status
+                .lock()
+                .map(|status| status.clone())
+                .unwrap_or(CachedUpdateStatus::Failed)
+        }
+
+        fn stop(&mut self) {
+            self.shutdown.store(true, Ordering::Relaxed);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    fn wait_for_next_update_check(shutdown: &AtomicBool) -> bool {
+        let mut waited = Duration::ZERO;
+        while waited < UPDATE_CHECK_INTERVAL {
+            if shutdown.load(Ordering::Relaxed) {
+                return false;
+            }
+            thread::sleep(UPDATE_CHECK_WAIT_SLICE);
+            waited += UPDATE_CHECK_WAIT_SLICE;
+        }
+
+        !shutdown.load(Ordering::Relaxed)
     }
 
     impl TrayState {
@@ -269,6 +360,21 @@ mod windows_tray {
             self.enabled = false;
             result
         }
+
+        fn update_status(&self) -> CachedUpdateStatus {
+            self.update_worker
+                .as_ref()
+                .map(UpdateWorker::status)
+                .unwrap_or(CachedUpdateStatus::Failed)
+        }
+
+        fn update_url(&self) -> Option<String> {
+            match self.update_status() {
+                CachedUpdateStatus::Available { url, .. } => Some(url),
+                CachedUpdateStatus::Latest => Some(updates::RELEASES_PAGE_URL.to_string()),
+                _ => None,
+            }
+        }
     }
 
     unsafe fn create_window() -> Result<Hwnd> {
@@ -357,6 +463,9 @@ mod windows_tray {
                 handle_worker_done(hwnd);
                 return 0;
             },
+            WM_UPDATE_CHECKED => {
+                return 0;
+            }
             WM_DESTROY => unsafe {
                 cleanup(hwnd);
                 PostQuitMessage(0);
@@ -375,19 +484,25 @@ mod windows_tray {
         }
 
         let devices_header = wide("Devices");
-        let help_header = wide("Help: Tool is not working?");
+        let help_header = wide("HELP: Is this tool not working for you?");
         let help_auto_color = wide("Disable Windows \"Auto Color Management\"");
         let help_nvidia_reference = wide("Disable NVIDIA \"Override to reference mode\"");
-        let directory_header = wide("Directory");
         let open_explorer = wide("Open In Explorer");
-        let open_config_label = wide("Open Configuration File");
+        let edit_config_label = wide("Edit");
         let color_header = wide("Color Adjustments");
         let presets = preset_items().unwrap_or_else(|_| Vec::new());
         let presets_label = wide("Presets");
         let enabled = wide("Enabled");
         let force = wide("Force");
         let reload = wide("Reload");
-        let application_header = wide("Application");
+        let application_header = wide(format!("Color LUT Tweaker v{}", env!("CARGO_PKG_VERSION")));
+        let update_status = unsafe {
+            state(hwnd)
+                .map(|state| state.update_status())
+                .unwrap_or(CachedUpdateStatus::Failed)
+        };
+        let (update_label, update_flags) = update_menu_item(&update_status);
+        let update_label = wide(update_label);
         let startup = wide("Start with Windows");
         let quit = wide("Quit");
         let (enabled_flags, force_flags, startup_flags) =
@@ -412,15 +527,6 @@ mod windows_tray {
                 section_header_flags(),
                 0,
                 help_nvidia_reference.as_ptr(),
-            );
-            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-            AppendMenuW(menu, section_header_flags(), 0, directory_header.as_ptr());
-            AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
-            AppendMenuW(
-                menu,
-                MF_STRING,
-                MENU_OPEN_CONFIG,
-                open_config_label.as_ptr(),
             );
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, color_header.as_ptr());
@@ -450,11 +556,19 @@ mod windows_tray {
                     presets_label.as_ptr(),
                 );
             }
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                MENU_OPEN_CONFIG,
+                edit_config_label.as_ptr(),
+            );
             AppendMenuW(menu, enabled_flags, MENU_ENABLED, enabled.as_ptr());
             AppendMenuW(menu, force_flags, MENU_FORCE, force.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, application_header.as_ptr());
+            AppendMenuW(menu, update_flags, MENU_UPDATE, update_label.as_ptr());
+            AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
             AppendMenuW(menu, startup_flags, MENU_STARTUP, startup.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
         }
@@ -533,6 +647,14 @@ mod windows_tray {
                     show_error(hwnd, &err.to_string());
                 }
             },
+            MENU_UPDATE => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Some(url) = state.update_url()
+                    && let Err(err) = open_url(&url)
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
             MENU_QUIT => unsafe {
                 DestroyWindow(hwnd);
             },
@@ -549,6 +671,17 @@ mod windows_tray {
             MF_STRING | MF_CHECKED
         } else {
             MF_STRING
+        }
+    }
+
+    fn update_menu_item(status: &CachedUpdateStatus) -> (String, u32) {
+        match status {
+            CachedUpdateStatus::Checking => ("Checking for updates...".to_string(), MF_GRAYED),
+            CachedUpdateStatus::Latest => ("Already in latest version".to_string(), MF_STRING),
+            CachedUpdateStatus::Available { version, .. } => {
+                (format!("Update available ({version})"), MF_STRING)
+            }
+            CachedUpdateStatus::Failed => ("Unable to check updates".to_string(), MF_GRAYED),
         }
     }
 
@@ -753,13 +886,21 @@ mod windows_tray {
     }
 
     fn open_path(path: impl AsRef<std::path::Path>) -> Result<()> {
+        open_shell_target(&path.as_ref().to_string_lossy())
+    }
+
+    fn open_url(url: &str) -> Result<()> {
+        open_shell_target(url)
+    }
+
+    fn open_shell_target(target: &str) -> Result<()> {
         let operation = wide("open");
-        let path = wide(path.as_ref().to_string_lossy());
+        let target = wide(target);
         let result = unsafe {
             ShellExecuteW(
                 ptr::null_mut(),
                 operation.as_ptr(),
-                path.as_ptr(),
+                target.as_ptr(),
                 ptr::null(),
                 ptr::null(),
                 SW_SHOWNORMAL,
@@ -800,6 +941,9 @@ mod windows_tray {
         }
         let mut state = unsafe { Box::from_raw(state_ptr) };
         let _ = state.stop_worker();
+        if let Some(mut worker) = state.update_worker.take() {
+            worker.stop();
+        }
     }
 
     unsafe fn add_tray_icon(hwnd: Hwnd) -> Result<()> {

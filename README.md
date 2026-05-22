@@ -5,6 +5,25 @@ you can load separate `.lut` files everytime you switch to HDR or SDR mode.
 
 You can also use this tool to apply EOTF correction for HDR or SDR only.
 
+## Roadmap
+
+### MVP
+- [x] ~~Loading LUT files in SDR and HDR.~~
+- [x] ~~Support for configuration presets.~~
+- [x] ~~Preset for Xiaomi G Pro 27i.~~
+- [ ] Automatic Windows configuration of ICC profiles and recommended settings.
+- [ ] Automatic NVIDIA configuration of system color settings.
+- [ ] Automatic monitor configuration using DDC/CI.
+- [ ] Improve initial loading performance for faster auto start.
+
+### Future
+- [ ] Automatic AMD configuration of system color settings.
+- [ ] Automatic Intel Graphics configuration of system color settings.
+- [ ] Create graphical user interface.
+- [ ] Improve command line interface.
+- [ ] MacOS support.
+- [ ] Linux support.
+
 ## Installing
 
 Download the latest [release](https://github.com/HugoSart/color-lut-tweaks/releases), or download the source code of this project and build it using `cargo`:
@@ -19,19 +38,13 @@ This will build the project in `target/release`, where it's ready to be executed
 - `profiles/`: bundled ICC/ICM color profiles;
 - `color-lut-tweaks.exe`: the main executable;
 
-## Development Checks
 
-Install the local commit hooks with:
-
-```shell
-winget install --id j178.Prek
-prek install
-```
-
-Run the same checks used by GitHub PR checks with:
+## Running
+After having your project build and configuration in place, run the executable. It will start running in the background
+and will appear in the system tray.
 
 ```shell
-prek run --all-files
+color-lut-tweaks.exe
 ```
 
 ## Configuration
@@ -64,34 +77,32 @@ and a custom LUT when you are in HDR:
 
 ### Xiaomi G Pro 27i Users
 This project also includes a default Xiaomi G Pro 27i HDR EOTF curve correction (because this is what motivated me to 
-create this tool). You can use it by simply starting the application and selecting the desired preset. If the monitor
-device id is not 0, click on the "Open Configuration File" button and manually edit the device number.
+create this tool) and Native to sRGB lut. You can use it by simply starting the application and selecting the desired 
+preset. If the monitor device id is not 0, click on the "Edit" button and manually edit the device number.
 
-![tray-screenshot.png](images/tray-screenshot.png)
-
-Xiaomi Presets:
-- Xiaomi G Pro 27i CHIMOLOG Calibration:
-  - Apply Native -> SRGB color conversion for SDR usage;
-  - Apply EOTF correction for HDR usage;
-- Xiaomi G Pro 27i CHIMOLOG Calibration (More Contrast):
-  - Same as above;
-  - Boost contrast;
-- Xiaomi G Pro 27i CHIMOLOG Calibration (Personal Preference):
-  - Same as above;
-  - Decrease red gain on SDR mode;
-  - Slightly increase red gain on HDR mode;
-  - This one is personal preference and may not apply to your config.
-
-## Running
-After having your project build and configuration in place, run the executable. It will start running in the background
-and will appear in the system tray.
-
-```shell
-color-lut-tweaks.exe
-```
+Check the [Xiaomi G Pro 27i Guide](./docs/guide-xiaomi-g-pro-27i.md) docs for more details.
 
 ---
-## LUT Format
+# Contributing
+
+## Requirements
+
+Required tools for development:
+- [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html): Required to build and run the project in
+  development mode.
+- [prek](https://github.com/j178/prek): Used for development quality checks.
+
+## Development Commands
+
+Useful commands for development:
+- `cargo build`: Build the project.
+- `cargo run`: Run the project in system tray mode.
+- `cargo run -- <args>`: Run the project in CLI mode.
+- `prek run --all-files`: Run code quality checks.
+
+---
+## Resources
+### LUT Format
 
 **LUT** stands for "Look Up Table", and in this context it refers to a set of gamma ramps that can be applied to a color
 space.
@@ -107,3 +118,6 @@ That means:
 - 3 channels: red, green, blue
 - 256 `u16` entries per channel
 - little-endian encoding
+
+3D LUT files `.cube` are also supported, but they are converted to `.lut` files on the fly. So, if you have a 3D LUT
+file that is complex, the result might be a bit different from the original.
