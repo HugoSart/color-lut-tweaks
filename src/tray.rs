@@ -595,6 +595,7 @@ mod windows_tray {
             return;
         }
 
+        let app_header = wide(format!("Color LUT Tweaks v{}", env!("CARGO_PKG_VERSION")));
         let devices_header = wide("Devices");
         let open_explorer = wide("Open In Explorer");
         let edit_config_label = wide("Edit");
@@ -611,7 +612,7 @@ mod windows_tray {
         let enabled = wide("Enabled");
         let force = wide("Force");
         let reload = wide("Reload");
-        let application_header = wide(format!("Color LUT Tweaker v{}", env!("CARGO_PKG_VERSION")));
+        let application_header = wide("Application");
         let update_status = unsafe {
             state(hwnd)
                 .map(|state| state.update_status())
@@ -621,8 +622,8 @@ mod windows_tray {
         let update_label = wide(update_label);
         let startup = wide("Start with Windows");
         let help_label = wide("Help");
-        let help_not_working = wide("Read this if the app seems to be not working");
-        let help_report_issue = wide("Report issue");
+        let help_not_working = wide("Read this if the app is not working");
+        let help_report_issue = wide("Report an issue");
         let help_feature_request = wide("Feature request");
         let quit = wide("Quit");
         let (
@@ -648,6 +649,36 @@ mod windows_tray {
             )
         };
         unsafe {
+            AppendMenuW(menu, section_header_flags(), 0, app_header.as_ptr());
+            AppendMenuW(menu, update_flags, MENU_UPDATE, update_label.as_ptr());
+            let help_menu = CreatePopupMenu();
+            if !help_menu.is_null() {
+                AppendMenuW(
+                    help_menu,
+                    MF_STRING,
+                    MENU_HELP_NOT_WORKING,
+                    help_not_working.as_ptr(),
+                );
+                AppendMenuW(
+                    help_menu,
+                    MF_STRING,
+                    MENU_HELP_REPORT_ISSUE,
+                    help_report_issue.as_ptr(),
+                );
+                AppendMenuW(
+                    help_menu,
+                    MF_STRING,
+                    MENU_HELP_FEATURE_REQUEST,
+                    help_feature_request.as_ptr(),
+                );
+                AppendMenuW(
+                    menu,
+                    MF_STRING | MF_POPUP,
+                    help_menu as usize,
+                    help_label.as_ptr(),
+                );
+            }
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, devices_header.as_ptr());
             append_device_rows(menu);
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
@@ -716,36 +747,8 @@ mod windows_tray {
             AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, application_header.as_ptr());
-            AppendMenuW(menu, update_flags, MENU_UPDATE, update_label.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
             AppendMenuW(menu, startup_flags, MENU_STARTUP, startup.as_ptr());
-            let help_menu = CreatePopupMenu();
-            if !help_menu.is_null() {
-                AppendMenuW(
-                    help_menu,
-                    MF_STRING,
-                    MENU_HELP_NOT_WORKING,
-                    help_not_working.as_ptr(),
-                );
-                AppendMenuW(
-                    help_menu,
-                    MF_STRING,
-                    MENU_HELP_REPORT_ISSUE,
-                    help_report_issue.as_ptr(),
-                );
-                AppendMenuW(
-                    help_menu,
-                    MF_STRING,
-                    MENU_HELP_FEATURE_REQUEST,
-                    help_feature_request.as_ptr(),
-                );
-                AppendMenuW(
-                    menu,
-                    MF_STRING | MF_POPUP,
-                    help_menu as usize,
-                    help_label.as_ptr(),
-                );
-            }
             AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
         }
 

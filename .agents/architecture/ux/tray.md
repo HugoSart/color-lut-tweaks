@@ -15,6 +15,16 @@ component should a Markdown item represent.
 
 ## Design
 ```text
+- "_Color LUT Tweaks vX.Y.Z_"
+- "Update available" if there is an update available; else "Check for updates"
+  - on-click: redirect to GitHub Releases page.
+- "Help > Read this if the app is not working"
+  - on-click: redirect to https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#why-is-the-app-not-working-or-dont-I-see-any-color-difference
+- "Help > Report an issue"
+  - on-click: redirect to https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#how-do-I-report-an-issue
+- "Help > Feature request"
+  - on-click: redirect to https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#how-do-I-suggest-a-new-feature
+---
 - "_Devices_"
 - "_<monitor-index>: <human-readable-monitor-name> (<dynamic-range-mode>)_"
   - for-each: monitor found in monitor list
@@ -38,19 +48,11 @@ component should a Markdown item represent.
 - "Reload"
   - on-click`: reload the color adjustments instantly once. 
 ---
-- "_Color LUT Tweaks vX.Y.Z_"
-- "Update available" if there is an update available; else "Check for updates"
-  - on-click: redirect to GitHub Releases page.
+- "_Application_"
 - "Open In Explorer"
   - on-click: open the installation folder in Explorer.
 - [ ] Start with Windows
   - on-click: toggle start with Windows.
-- "Help > Read this if the app seems to be not working"
-  - on-click: redirect to https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#why-is-the-app-not-working-or-dont-I-see-any-color-difference
-- "Help > Report issue"
-  - on-click: redirect to https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#how-do-I-report-an-issue
-- "Help > Feature request"
-  - on-click: redirect to https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#how-do-I-suggest-a-new-feature
 - "Quit"
   - on-click: quit the application. 
 ```
