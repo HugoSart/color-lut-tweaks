@@ -24,11 +24,11 @@ component should a Markdown item represent.
   - for-each: preset found in presets list
   - on-click: apply the preset.
 - "[ ] Override > Ignore SDR adjustments"
-  - on-click: toggle ignore SDR adjustments.
+  - on-click: toggle ignore apply SDR adjustments on reload or preset changes.
 - "[ ] Override > Ignore HDR adjustments"
-  - on-click: toggle ignore HDR adjustments.
+  - on-click: toggle ignore HDR adjustments on reload or preset changes.
 - "[ ] Override > Ignore Windows adjustments"
-  - on-click: toggle ignore HDR adjustments. 
+  - on-click: toggle ignore HDR adjustments on reload or preset changes. 
 - "Edit"
   - on-click: open the config file in the default text editor.
 - "[ ] Enabled"
