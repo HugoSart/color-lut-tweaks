@@ -935,12 +935,8 @@ mod windows_tray {
         let mut rows = Vec::with_capacity(count);
         for index in 0..count {
             let name = platform.device_label(index)?;
-            let mode = if platform.hdr_enabled(index)? {
-                "HDR"
-            } else {
-                "SDR"
-            };
-            rows.push(format!("{index}: {name} ({mode})"));
+            let hardware_id = platform.device_hardware_id(index)?;
+            rows.push(format!("{index}: {name} ({hardware_id})"));
         }
 
         Ok(rows)
@@ -1204,6 +1200,22 @@ mod windows_tray {
     }
 
     fn apply_recommended_color_settings(config: &std::path::Path) -> Result<()> {
+        match crate::windows_settings::apply_current_user_from_config_file(config)? {
+            crate::windows_settings::WindowsSettingsApply::NotConfigured => {}
+            crate::windows_settings::WindowsSettingsApply::AlreadyApplied => {
+                logging::info(format!(
+                    "current-user Windows color profile settings already applied for {}",
+                    config.display()
+                ));
+            }
+            crate::windows_settings::WindowsSettingsApply::Applied => {
+                logging::info(format!(
+                    "applied current-user Windows color profile settings from {}",
+                    config.display()
+                ));
+            }
+        }
+
         if !crate::windows_settings::needs_elevated_apply(config)? {
             logging::info(format!(
                 "recommended Windows settings already applied for {}",
@@ -1218,7 +1230,7 @@ mod windows_tray {
         ));
         let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
         let parameters = format!(
-            "apply-windows-settings --config {}",
+            "apply-auto-color-management-settings --config {}",
             quote_shell_arg(&config.to_string_lossy())
         );
         shell_execute("runas", &exe.to_string_lossy(), Some(&parameters), SW_HIDE)

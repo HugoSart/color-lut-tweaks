@@ -4,7 +4,7 @@ use std::{env, fs};
 
 use color_lut_tweaks::app::{
     self, AdjustOptions, ColorMode, DeviceSelector, RuntimeOptions, TweakModeFilter, TweakOptions,
-    WindowsTweakOptions,
+    WindowsColorProfile, WindowsTweakOptions,
 };
 use color_lut_tweaks::lut::GammaRamp;
 use color_lut_tweaks::platform::DisplayPlatform;
@@ -112,6 +112,24 @@ fn tweak_mode_filter_can_ignore_sdr_and_hdr_independently() {
 }
 
 #[test]
+fn tweak_mode_filter_trims_mode_arrays() {
+    let tweaks = vec![TweakOptions {
+        mode: Some(ColorMode::Any(vec![ColorMode::Hdr, ColorMode::Sdr])),
+        lut: Some(PathBuf::from("identity")),
+        ..Default::default()
+    }];
+
+    let filtered = TweakModeFilter {
+        ignore_hdr_adjustments: true,
+        ignore_sdr_adjustments: false,
+    }
+    .apply_to(&tweaks);
+
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].mode, Some(ColorMode::Sdr));
+}
+
+#[test]
 fn start_waits_until_configured_monitor_is_available() {
     let platform = MonitorAvailableAfterFirstPoll {
         count_checks: Cell::new(0),
@@ -216,7 +234,7 @@ fn named_cube_resolves_to_luts_folder_next_to_exe() {
 #[test]
 fn named_lut_in_config_is_not_resolved_relative_to_config_file() {
     let tweaks = TweakOptions::list_from_config_file(
-        "configs/Xiaomi G Pro 27i CHIMOLOG Calibration.config.json",
+        "../configs/Xiaomi G Pro 27i - Native to sRGB and EOTF Fix with Peak Color Correction.config.json",
     )
     .unwrap();
 
@@ -265,6 +283,24 @@ fn config_loads_adjust_options() {
 }
 
 #[test]
+fn config_loads_device_and_mode_arrays_as_any_of_selectors() {
+    let tweaks =
+        TweakOptions::list_from_config_file("tests/fixtures/config-selectors.json").unwrap();
+
+    assert_eq!(
+        tweaks[0].device,
+        Some(DeviceSelector::Any(vec![
+            DeviceSelector::Index(0),
+            DeviceSelector::Name("XMI27B2".to_string()),
+        ]))
+    );
+    assert_eq!(
+        tweaks[0].mode,
+        Some(ColorMode::Any(vec![ColorMode::Hdr, ColorMode::Sdr]))
+    );
+}
+
+#[test]
 fn config_loads_windows_options() {
     let tweaks = TweakOptions::list_from_config_file("tests/fixtures/config-windows.json").unwrap();
 
@@ -278,8 +314,68 @@ fn config_loads_windows_options() {
     assert_eq!(
         tweaks[0].windows,
         WindowsTweakOptions {
-            auto_color_management: Some(true)
+            auto_color_management: Some(true),
+            ..Default::default()
         }
+    );
+}
+
+#[test]
+fn config_loads_windows_color_profile_states() {
+    let tweaks =
+        TweakOptions::list_from_config_file("tests/fixtures/config-windows-profiles.json").unwrap();
+
+    assert_eq!(
+        tweaks[0].windows.sdr_color_profile,
+        WindowsColorProfile::Clear
+    );
+    assert_eq!(
+        tweaks[0].windows.hdr_color_profile,
+        WindowsColorProfile::Set(PathBuf::from("tests/fixtures/profile-a.icm"))
+    );
+    assert_eq!(
+        tweaks[1].windows.hdr_color_profile,
+        WindowsColorProfile::Set(
+            env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("profiles")
+                .join("Bundled Profile.icm")
+        )
+    );
+    assert_eq!(
+        tweaks[2].windows.sdr_color_profile,
+        WindowsColorProfile::Unset
+    );
+    assert_eq!(
+        tweaks[2].windows.hdr_color_profile,
+        WindowsColorProfile::Unset
+    );
+}
+
+#[test]
+fn named_profile_prefers_icc_when_icm_is_missing() {
+    stage_named_profile_fixture("Only Icc Profile.icc");
+
+    let tweaks =
+        TweakOptions::list_from_config_file("tests/fixtures/config-windows-profile-icc.json")
+            .unwrap();
+
+    assert_eq!(
+        tweaks[0].windows.hdr_color_profile,
+        WindowsColorProfile::Set(
+            env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("profiles")
+                .join("Only Icc Profile.icc")
+        )
     );
 }
 
@@ -405,4 +501,16 @@ fn stage_named_cube_fixture() {
         luts_dir.join("named-cube-fixture.cube"),
     )
     .unwrap();
+}
+
+fn stage_named_profile_fixture(file_name: &str) {
+    let profiles_dir = env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(profiles_dir.join(file_name), b"profile fixture").unwrap();
 }

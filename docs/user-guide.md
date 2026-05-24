@@ -10,6 +10,12 @@ For short:
 - For NVIDIA: Disable "System > Displays > Color > Color Accuracy Mode > Override to reference mode"
 - For AMD: Disable "Gaming > Display > Custom Color > Color Temperature Control"
 
+### Why is the preset being applied to the wrong monitor?
+
+The pre-defined presets by default assume that the monitor being adjusted is always the first monitor. In case you have
+multiple monitors, and you desire to apply the preset for a different one, click "Edit" and change the "device" 
+id manually. After that, click "Reload" to re-apply the preset.
+
 ### How do I report an issue?
 
 To report a new issue, create a new [Issue](https://github.com/HugoSart/color-lut-tweaks/issues/new), and in the right

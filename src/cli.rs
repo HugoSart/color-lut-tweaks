@@ -15,6 +15,7 @@ pub enum Command {
     Tray(StartOptions),
     TrayWorker(StartOptions),
     ApplyWindowsSettings(StartOptions),
+    ApplyAutoColorManagementSettings(StartOptions),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -143,6 +144,21 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
                 }
             }
         }
+        Command::ApplyAutoColorManagementSettings(options) => {
+            let config = options.config.unwrap_or(app::default_config_path()?);
+            let tweaks = TweakOptions::list_from_config_file(&config)?;
+            match crate::windows_settings::apply_auto_color_management_from_tweaks(&tweaks)? {
+                crate::windows_settings::WindowsSettingsApply::NotConfigured => {
+                    print_info("No Windows auto color management setting configured")
+                }
+                crate::windows_settings::WindowsSettingsApply::AlreadyApplied => {
+                    print_info("Windows auto color management already applied")
+                }
+                crate::windows_settings::WindowsSettingsApply::Applied => {
+                    print_info("Applied Windows auto color management")
+                }
+            }
+        }
     }
 
     Ok(())
@@ -177,6 +193,11 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
         [command, rest @ ..] if command == "apply-windows-settings" => Ok(
             Command::ApplyWindowsSettings(parse_start_options("apply-windows-settings", rest)?),
         ),
+        [command, rest @ ..] if command == "apply-auto-color-management-settings" => {
+            Ok(Command::ApplyAutoColorManagementSettings(
+                parse_start_options("apply-auto-color-management-settings", rest)?,
+            ))
+        }
         [first, ..] if first.starts_with('-') => Ok(Command::Watch(parse_options(args)?)),
         _ => Err(Error::InvalidArguments(expected_usage())),
     }

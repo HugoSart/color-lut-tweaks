@@ -48,6 +48,29 @@ fn apply_with_mode_checks_display_mode() {
 }
 
 #[test]
+fn apply_with_mode_array_matches_any_mode() {
+    let platform = MockDisplayPlatform::default();
+
+    app::apply_tweaks(
+        &platform,
+        &TweakOptions {
+            device: Some(device(0)),
+            lut: Some(PathBuf::from("identity")),
+            mode: Some(ColorMode::Any(vec![ColorMode::Hdr, ColorMode::Sdr])),
+            adjust: None,
+            windows: Default::default(),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(platform.hdr_checks.borrow().as_slice(), &[0]);
+    assert_eq!(
+        platform.applied.borrow().as_slice(),
+        &[(0, GammaRamp::identity())]
+    );
+}
+
+#[test]
 fn apply_identity_lut_uses_generated_identity_ramp() {
     let platform = MockDisplayPlatform::default();
 
@@ -161,6 +184,11 @@ fn apply_can_target_device_by_name() {
             r"\\.\DISPLAY1".to_string(),
             r"\\.\DISPLAY3".to_string(),
         ],
+        device_hardware_ids: vec![
+            "XMI27B2".to_string(),
+            "XMI27B3".to_string(),
+            "OTHER".to_string(),
+        ],
         device_labels: vec![
             "Mi Monitor".to_string(),
             "Mi Monitor".to_string(),
@@ -213,10 +241,69 @@ fn apply_can_target_device_by_friendly_name() {
     );
 }
 
+#[test]
+fn apply_device_string_prefers_hardware_id_before_friendly_name() {
+    let platform = MockDisplayPlatform {
+        device_names: vec![r"\\.\DISPLAY1".to_string(), r"\\.\DISPLAY2".to_string()],
+        device_hardware_ids: vec!["XMI27B2".to_string(), "OTHER".to_string()],
+        device_labels: vec!["Other Monitor".to_string(), "XMI27B2".to_string()],
+        ..MockDisplayPlatform::default()
+    };
+
+    app::apply_tweaks(
+        &platform,
+        &TweakOptions {
+            device: Some(DeviceSelector::Name("XMI27B2".to_string())),
+            lut: Some(PathBuf::from("identity")),
+            mode: None,
+            adjust: None,
+            windows: Default::default(),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        platform.applied.borrow().as_slice(),
+        &[(0, GammaRamp::identity())]
+    );
+}
+
+#[test]
+fn apply_device_array_matches_any_selector_without_duplicates() {
+    let platform = MockDisplayPlatform {
+        device_names: vec![r"\\.\DISPLAY1".to_string(), r"\\.\DISPLAY2".to_string()],
+        device_hardware_ids: vec!["XMI27B2".to_string(), "OTHER".to_string()],
+        device_labels: vec!["Mi Monitor".to_string(), "Other Monitor".to_string()],
+        ..MockDisplayPlatform::default()
+    };
+
+    app::apply_tweaks(
+        &platform,
+        &TweakOptions {
+            device: Some(DeviceSelector::Any(vec![
+                DeviceSelector::Index(0),
+                DeviceSelector::Name("Mi Monitor".to_string()),
+                DeviceSelector::Name("OTHER".to_string()),
+            ])),
+            lut: Some(PathBuf::from("identity")),
+            mode: None,
+            adjust: None,
+            windows: Default::default(),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        platform.applied.borrow().as_slice(),
+        &[(0, GammaRamp::identity()), (1, GammaRamp::identity())]
+    );
+}
+
 struct MockDisplayPlatform {
     hdr_checks: RefCell<Vec<usize>>,
     applied: RefCell<Vec<(usize, GammaRamp)>>,
     device_names: Vec<String>,
+    device_hardware_ids: Vec<String>,
     device_labels: Vec<String>,
 }
 
@@ -226,6 +313,7 @@ impl Default for MockDisplayPlatform {
             hdr_checks: RefCell::new(Vec::new()),
             applied: RefCell::new(Vec::new()),
             device_names: vec![r"\\.\DISPLAY1".to_string()],
+            device_hardware_ids: vec!["XMI27B2".to_string()],
             device_labels: vec!["Mi Monitor".to_string()],
         }
     }
@@ -238,6 +326,14 @@ impl DisplayPlatform for MockDisplayPlatform {
 
     fn device_name(&self, device_index: usize) -> Result<String> {
         Ok(self.device_names[device_index].clone())
+    }
+
+    fn device_hardware_id(&self, device_index: usize) -> Result<String> {
+        Ok(self
+            .device_hardware_ids
+            .get(device_index)
+            .unwrap_or(&self.device_names[device_index])
+            .clone())
     }
 
     fn device_label(&self, device_index: usize) -> Result<String> {

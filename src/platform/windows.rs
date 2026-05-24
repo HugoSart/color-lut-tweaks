@@ -41,6 +41,10 @@ impl DisplayPlatform for WindowsDisplayPlatform {
         Ok(display_name_lossy(&active_display_name(device_index)?))
     }
 
+    fn device_hardware_id(&self, device_index: usize) -> Result<String> {
+        device_hardware_id(device_index)
+    }
+
     fn device_label(&self, device_index: usize) -> Result<String> {
         device_label(device_index)
     }
@@ -191,6 +195,11 @@ fn device_label(device_index: usize) -> Result<String> {
     monitor_device_string(&display).map_or_else(|| Ok(display_name_lossy(&display)), Ok)
 }
 
+fn device_hardware_id(device_index: usize) -> Result<String> {
+    let display = active_display_name(device_index)?;
+    monitor_device_id(&display).map_or_else(|| Ok(display_name_lossy(&display)), Ok)
+}
+
 fn target_friendly_name(path: &DisplayConfigPathInfo) -> Result<String> {
     let mut target_name = DisplayConfigTargetDeviceName {
         header: DisplayConfigDeviceInfoHeader {
@@ -242,6 +251,16 @@ fn source_display_name(path: &DisplayConfigPathInfo) -> Result<Vec<u16>> {
 }
 
 fn monitor_device_string(display_name: &[u16]) -> Option<String> {
+    active_monitor_display_device(display_name)
+        .map(|device| display_name_lossy(&device.device_string))
+}
+
+fn monitor_device_id(display_name: &[u16]) -> Option<String> {
+    active_monitor_display_device(display_name)
+        .map(|device| hardware_id_from_device_id(&display_name_lossy(&device.device_id)))
+}
+
+fn active_monitor_display_device(display_name: &[u16]) -> Option<DisplayDeviceW> {
     let mut index = 0;
     loop {
         let mut device = DisplayDeviceW {
@@ -255,14 +274,20 @@ fn monitor_device_string(display_name: &[u16]) -> Option<String> {
         }
 
         if device.state_flags & DISPLAY_DEVICE_ACTIVE != 0 {
-            let value = display_name_lossy(&device.device_string);
-            if !value.trim().is_empty() {
-                return Some(value);
-            }
+            return Some(device);
         }
 
         index += 1;
     }
+}
+
+fn hardware_id_from_device_id(device_id: &str) -> String {
+    device_id
+        .split('\\')
+        .nth(1)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(device_id)
+        .to_string()
 }
 
 fn active_display_paths() -> Result<Vec<DisplayConfigPathInfo>> {

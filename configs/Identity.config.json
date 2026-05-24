@@ -1,12 +1,6 @@
 [
   {
-    "device": 0,
-    "mode": "sdr",
-    "lut": "identity"
-  },
-  {
-    "device": 0,
-    "mode": "hdr",
+    "mode": ["sdr", "hdr"],
     "lut": "identity"
   }
 ]

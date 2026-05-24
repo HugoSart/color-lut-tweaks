@@ -26,7 +26,7 @@ component should a Markdown item represent.
   - on-click: redirect to https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#how-do-I-suggest-a-new-feature
 ---
 - "_Devices_"
-- "_<monitor-index>: <human-readable-monitor-name> (<dynamic-range-mode>)_"
+- "_<monitor-index>: <human-readable-monitor-name> (<hardware-id>)_"
   - for-each: monitor found in monitor list
 ---
 - "_Color Adjustments_"
