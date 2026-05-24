@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::{env, fs};
 
 use color_lut_tweaks::app::{
-    self, AdjustOptions, ColorMode, DeviceSelector, RuntimeOptions, TweakOptions,
+    self, AdjustOptions, ColorMode, DeviceSelector, RuntimeOptions, TweakModeFilter, TweakOptions,
     WindowsTweakOptions,
 };
 use color_lut_tweaks::lut::GammaRamp;
@@ -45,6 +45,70 @@ fn empty_tweak_list_is_valid() {
 #[test]
 fn runtime_options_default_to_force_enabled() {
     assert!(RuntimeOptions::default().force);
+}
+
+#[test]
+fn tweak_mode_filter_treats_missing_mode_as_hdr() {
+    let tweaks = vec![
+        TweakOptions {
+            mode: None,
+            lut: Some(PathBuf::from("identity")),
+            ..Default::default()
+        },
+        TweakOptions {
+            mode: Some(ColorMode::Sdr),
+            lut: Some(PathBuf::from("identity")),
+            ..Default::default()
+        },
+    ];
+
+    let filtered = TweakModeFilter {
+        ignore_hdr_adjustments: true,
+        ignore_sdr_adjustments: false,
+    }
+    .apply_to(&tweaks);
+
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].mode, Some(ColorMode::Sdr));
+}
+
+#[test]
+fn tweak_mode_filter_can_ignore_sdr_and_hdr_independently() {
+    let tweaks = vec![
+        TweakOptions {
+            mode: Some(ColorMode::Hdr),
+            lut: Some(PathBuf::from("identity")),
+            ..Default::default()
+        },
+        TweakOptions {
+            mode: Some(ColorMode::Sdr),
+            lut: Some(PathBuf::from("identity")),
+            ..Default::default()
+        },
+    ];
+
+    assert_eq!(
+        TweakModeFilter {
+            ignore_hdr_adjustments: false,
+            ignore_sdr_adjustments: true,
+        }
+        .apply_to(&tweaks)
+        .into_iter()
+        .map(|tweak| tweak.mode)
+        .collect::<Vec<_>>(),
+        vec![Some(ColorMode::Hdr)]
+    );
+    assert_eq!(
+        TweakModeFilter {
+            ignore_hdr_adjustments: true,
+            ignore_sdr_adjustments: false,
+        }
+        .apply_to(&tweaks)
+        .into_iter()
+        .map(|tweak| tweak.mode)
+        .collect::<Vec<_>>(),
+        vec![Some(ColorMode::Sdr)]
+    );
 }
 
 #[test]

@@ -38,6 +38,7 @@ component should a Markdown item represent.
 - "Reload"
   - on-click`: reload the color adjustments instantly once. 
 ---
+- "_Color LUT Tweaks vX.Y.Z_"
 - "Update available" if there is an update available; else "Check for updates"
   - on-click: redirect to GitHub Releases page.
 - "Open In Explorer"

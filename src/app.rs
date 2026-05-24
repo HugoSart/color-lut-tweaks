@@ -411,6 +411,29 @@ impl Default for RuntimeOptions {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TweakModeFilter {
+    pub ignore_sdr_adjustments: bool,
+    pub ignore_hdr_adjustments: bool,
+}
+
+impl TweakModeFilter {
+    pub fn apply_to(self, tweaks: &[TweakOptions]) -> Vec<TweakOptions> {
+        tweaks
+            .iter()
+            .filter(|tweak| self.includes(tweak))
+            .cloned()
+            .collect()
+    }
+
+    pub fn includes(self, tweak: &TweakOptions) -> bool {
+        match tweak.mode.unwrap_or(ColorMode::Hdr) {
+            ColorMode::Hdr => !self.ignore_hdr_adjustments,
+            ColorMode::Sdr => !self.ignore_sdr_adjustments,
+        }
+    }
+}
+
 fn sleep_poll_interval(should_stop: impl Fn() -> bool) {
     let slice = Duration::from_millis(100);
     for _ in 0..20 {
