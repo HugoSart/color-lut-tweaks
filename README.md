@@ -3,7 +3,9 @@
 Small Windows CLI for loading raw `.lut` gamma ramps and applying them when HDR or SDR is active. With this application,
 you can load separate `.lut` files everytime you switch to HDR or SDR mode.
 
-You can also use this tool to apply EOTF correction for HDR or SDR only.
+## Features
+- Load `.lut` files for SDR and HDR;
+- Automatically configure Windows color settings (Color Profiles, ACM, etc)
 
 ## Roadmap
 
@@ -11,7 +13,7 @@ You can also use this tool to apply EOTF correction for HDR or SDR only.
 - [x] ~~Loading LUT files in SDR and HDR.~~
 - [x] ~~Support for configuration presets.~~
 - [x] ~~Preset for Xiaomi G Pro 27i.~~
-- [x] ~~Automatic Windows configuration of ICC profiles and recommended settings.~~
+- [x] ~~Automatic Windows configuration of ICC / ICM profiles and Auto Color Management.~~
 - [ ] Automatic NVIDIA configuration of system color settings.
 - [ ] Automatic monitor configuration using DDC/CI.
 - [ ] Improve initial loading performance for faster auto start.
