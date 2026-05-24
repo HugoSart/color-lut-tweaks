@@ -2,12 +2,13 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::{env, fs};
 
-use color_lut_tweaks::Result;
 use color_lut_tweaks::app::{
-    self, AdjustOptions, ColorMode, DeviceSelector, RuntimeOptions, TweakOptions,
+    self, AdjustOptions, ColorMode, DeviceSelector, RuntimeOptions, TweakModeFilter, TweakOptions,
+    WindowsColorProfile, WindowsTweakOptions,
 };
 use color_lut_tweaks::lut::GammaRamp;
 use color_lut_tweaks::platform::DisplayPlatform;
+use color_lut_tweaks::{Error, Result};
 
 #[test]
 fn start_config_loads_tweak_options_list() {
@@ -21,12 +22,14 @@ fn start_config_loads_tweak_options_list() {
                 mode: Some(ColorMode::Hdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
                 adjust: None,
+                windows: Default::default(),
             },
             TweakOptions {
                 device: Some(device(0)),
                 mode: Some(ColorMode::Sdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
                 adjust: None,
+                windows: Default::default(),
             },
         ]
     );
@@ -45,6 +48,88 @@ fn runtime_options_default_to_force_enabled() {
 }
 
 #[test]
+fn tweak_mode_filter_treats_missing_mode_as_hdr() {
+    let tweaks = vec![
+        TweakOptions {
+            mode: None,
+            lut: Some(PathBuf::from("identity")),
+            ..Default::default()
+        },
+        TweakOptions {
+            mode: Some(ColorMode::Sdr),
+            lut: Some(PathBuf::from("identity")),
+            ..Default::default()
+        },
+    ];
+
+    let filtered = TweakModeFilter {
+        ignore_hdr_adjustments: true,
+        ignore_sdr_adjustments: false,
+    }
+    .apply_to(&tweaks);
+
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].mode, Some(ColorMode::Sdr));
+}
+
+#[test]
+fn tweak_mode_filter_can_ignore_sdr_and_hdr_independently() {
+    let tweaks = vec![
+        TweakOptions {
+            mode: Some(ColorMode::Hdr),
+            lut: Some(PathBuf::from("identity")),
+            ..Default::default()
+        },
+        TweakOptions {
+            mode: Some(ColorMode::Sdr),
+            lut: Some(PathBuf::from("identity")),
+            ..Default::default()
+        },
+    ];
+
+    assert_eq!(
+        TweakModeFilter {
+            ignore_hdr_adjustments: false,
+            ignore_sdr_adjustments: true,
+        }
+        .apply_to(&tweaks)
+        .into_iter()
+        .map(|tweak| tweak.mode)
+        .collect::<Vec<_>>(),
+        vec![Some(ColorMode::Hdr)]
+    );
+    assert_eq!(
+        TweakModeFilter {
+            ignore_hdr_adjustments: true,
+            ignore_sdr_adjustments: false,
+        }
+        .apply_to(&tweaks)
+        .into_iter()
+        .map(|tweak| tweak.mode)
+        .collect::<Vec<_>>(),
+        vec![Some(ColorMode::Sdr)]
+    );
+}
+
+#[test]
+fn tweak_mode_filter_trims_mode_arrays() {
+    let tweaks = vec![TweakOptions {
+        mode: Some(ColorMode::Any(vec![ColorMode::Hdr, ColorMode::Sdr])),
+        lut: Some(PathBuf::from("identity")),
+        ..Default::default()
+    }];
+
+    let filtered = TweakModeFilter {
+        ignore_hdr_adjustments: true,
+        ignore_sdr_adjustments: false,
+    }
+    .apply_to(&tweaks);
+
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].mode, Some(ColorMode::Sdr));
+}
+
+#[test]
 fn start_waits_until_configured_monitor_is_available() {
     let platform = MonitorAvailableAfterFirstPoll {
         count_checks: Cell::new(0),
@@ -58,6 +143,7 @@ fn start_waits_until_configured_monitor_is_available() {
             mode: Some(ColorMode::Sdr),
             lut: Some(PathBuf::from("identity")),
             adjust: None,
+            windows: Default::default(),
         }],
         RuntimeOptions { force: false },
         || !platform.applied.borrow().is_empty(),
@@ -65,6 +151,30 @@ fn start_waits_until_configured_monitor_is_available() {
     .unwrap();
 
     assert_eq!(platform.applied.borrow()[0], (0, GammaRamp::identity()));
+}
+
+#[test]
+fn start_tolerates_transient_force_capture_failure() {
+    let platform = ForceCaptureFailsOnce {
+        captures: Cell::new(0),
+        applied: RefCell::new(Vec::new()),
+    };
+
+    app::run_tweaks_until(
+        &platform,
+        &[TweakOptions {
+            device: Some(device(0)),
+            mode: Some(ColorMode::Sdr),
+            lut: Some(PathBuf::from("identity")),
+            adjust: None,
+            windows: Default::default(),
+        }],
+        RuntimeOptions { force: true },
+        || platform.captures.get() >= 3,
+    )
+    .unwrap();
+
+    assert!(!platform.applied.borrow().is_empty());
 }
 
 #[test]
@@ -87,12 +197,14 @@ fn identity_lut_in_config_is_not_resolved_as_relative_path() {
                 mode: Some(ColorMode::Hdr),
                 lut: Some(PathBuf::from("identity")),
                 adjust: None,
+                windows: Default::default(),
             },
             TweakOptions {
                 device: Some(device(0)),
                 mode: Some(ColorMode::Sdr),
                 lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
                 adjust: None,
+                windows: Default::default(),
             },
         ]
     );
@@ -122,7 +234,7 @@ fn named_cube_resolves_to_luts_folder_next_to_exe() {
 #[test]
 fn named_lut_in_config_is_not_resolved_relative_to_config_file() {
     let tweaks = TweakOptions::list_from_config_file(
-        "configs/Xiaomi G Pro 27i CHIMOLOG Calibration.config.json",
+        "configs/Xiaomi G Pro 27i - Native to sRGB and EOTF Fix with Peak Color Correction.config.json",
     )
     .unwrap();
 
@@ -143,6 +255,7 @@ fn many_config_loader_accepts_single_tweak_object() {
             mode: Some(ColorMode::Hdr),
             lut: Some(PathBuf::from("tests/fixtures/valid-xiaomi-27i-pro.lut")),
             adjust: None,
+            windows: Default::default(),
         }]
     );
 }
@@ -164,7 +277,105 @@ fn config_loads_adjust_options() {
                 gain: Some([1.0, 0.95, 1.0]),
                 offset: Some([0.0, 0.0, 0.0]),
             }),
+            windows: Default::default(),
         }]
+    );
+}
+
+#[test]
+fn config_loads_device_and_mode_arrays_as_any_of_selectors() {
+    let tweaks =
+        TweakOptions::list_from_config_file("tests/fixtures/config-selectors.json").unwrap();
+
+    assert_eq!(
+        tweaks[0].device,
+        Some(DeviceSelector::Any(vec![
+            DeviceSelector::Index(0),
+            DeviceSelector::Name("XMI27B2".to_string()),
+        ]))
+    );
+    assert_eq!(
+        tweaks[0].mode,
+        Some(ColorMode::Any(vec![ColorMode::Hdr, ColorMode::Sdr]))
+    );
+}
+
+#[test]
+fn config_loads_windows_options() {
+    let tweaks = TweakOptions::list_from_config_file("tests/fixtures/config-windows.json").unwrap();
+
+    assert_eq!(
+        tweaks
+            .iter()
+            .map(|tweak| tweak.windows.auto_color_management)
+            .collect::<Vec<_>>(),
+        vec![Some(true), None, None]
+    );
+    assert_eq!(
+        tweaks[0].windows,
+        WindowsTweakOptions {
+            auto_color_management: Some(true),
+            ..Default::default()
+        }
+    );
+}
+
+#[test]
+fn config_loads_windows_color_profile_states() {
+    let tweaks =
+        TweakOptions::list_from_config_file("tests/fixtures/config-windows-profiles.json").unwrap();
+
+    assert_eq!(
+        tweaks[0].windows.sdr_color_profile,
+        WindowsColorProfile::Clear
+    );
+    assert_eq!(
+        tweaks[0].windows.hdr_color_profile,
+        WindowsColorProfile::Set(PathBuf::from("tests/fixtures/profile-a.icm"))
+    );
+    assert_eq!(
+        tweaks[1].windows.hdr_color_profile,
+        WindowsColorProfile::Set(
+            env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("profiles")
+                .join("Bundled Profile.icm")
+        )
+    );
+    assert_eq!(
+        tweaks[2].windows.sdr_color_profile,
+        WindowsColorProfile::Unset
+    );
+    assert_eq!(
+        tweaks[2].windows.hdr_color_profile,
+        WindowsColorProfile::Unset
+    );
+}
+
+#[test]
+fn named_profile_prefers_icc_when_icm_is_missing() {
+    stage_named_profile_fixture("Only Icc Profile.icc");
+
+    let tweaks =
+        TweakOptions::list_from_config_file("tests/fixtures/config-windows-profile-icc.json")
+            .unwrap();
+
+    assert_eq!(
+        tweaks[0].windows.hdr_color_profile,
+        WindowsColorProfile::Set(
+            env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("profiles")
+                .join("Only Icc Profile.icc")
+        )
     );
 }
 
@@ -238,6 +449,40 @@ impl DisplayPlatform for MonitorAvailableAfterFirstPoll {
     }
 }
 
+struct ForceCaptureFailsOnce {
+    captures: Cell<usize>,
+    applied: RefCell<Vec<(usize, GammaRamp)>>,
+}
+
+impl DisplayPlatform for ForceCaptureFailsOnce {
+    fn active_device_count(&self) -> Result<usize> {
+        Ok(1)
+    }
+
+    fn device_name(&self, device_index: usize) -> Result<String> {
+        Ok(format!(r"\\.\DISPLAY{}", device_index + 1))
+    }
+
+    fn hdr_enabled(&self, _device_index: usize) -> Result<bool> {
+        Ok(false)
+    }
+
+    fn capture_gamma_ramp(&self, _device_index: usize) -> Result<GammaRamp> {
+        let captures = self.captures.get();
+        self.captures.set(captures + 1);
+        if captures == 1 {
+            Err(Error::platform("transient GetDeviceGammaRamp failed"))
+        } else {
+            Ok(GammaRamp::identity())
+        }
+    }
+
+    fn apply_gamma_ramp(&self, device_index: usize, ramp: &GammaRamp) -> Result<()> {
+        self.applied.borrow_mut().push((device_index, ramp.clone()));
+        Ok(())
+    }
+}
+
 fn device(index: usize) -> DeviceSelector {
     DeviceSelector::Index(index)
 }
@@ -256,4 +501,16 @@ fn stage_named_cube_fixture() {
         luts_dir.join("named-cube-fixture.cube"),
     )
     .unwrap();
+}
+
+fn stage_named_profile_fixture(file_name: &str) {
+    let profiles_dir = env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("profiles");
+    fs::create_dir_all(&profiles_dir).unwrap();
+    fs::write(profiles_dir.join(file_name), b"profile fixture").unwrap();
 }

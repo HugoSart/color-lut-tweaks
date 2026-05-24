@@ -3,7 +3,9 @@
 Small Windows CLI for loading raw `.lut` gamma ramps and applying them when HDR or SDR is active. With this application,
 you can load separate `.lut` files everytime you switch to HDR or SDR mode.
 
-You can also use this tool to apply EOTF correction for HDR or SDR only.
+## Features
+- Load `.lut` files for SDR and HDR;
+- Automatically configure Windows color settings (Color Profiles, ACM, etc)
 
 ## Roadmap
 
@@ -11,7 +13,7 @@ You can also use this tool to apply EOTF correction for HDR or SDR only.
 - [x] ~~Loading LUT files in SDR and HDR.~~
 - [x] ~~Support for configuration presets.~~
 - [x] ~~Preset for Xiaomi G Pro 27i.~~
-- [ ] Automatic Windows configuration of ICC profiles and recommended settings.
+- [x] ~~Automatic Windows configuration of ICC / ICM profiles and Auto Color Management.~~
 - [ ] Automatic NVIDIA configuration of system color settings.
 - [ ] Automatic monitor configuration using DDC/CI.
 - [ ] Improve initial loading performance for faster auto start.
@@ -56,8 +58,8 @@ and a custom LUT when you are in HDR:
 ```json
 [
   {
-    "device": 0,
-    "mode": "sdr",
+    "device": [0, "XMI27B2", "Mi Monitor"],
+    "mode": ["sdr"],
     "lut": "identity"
   },
   {
@@ -70,10 +72,23 @@ and a custom LUT when you are in HDR:
       "gamma": 1.0,
       "gain": [1.0, 1.0, 1.0],
       "offset": [0.0, 0.0, 0.0]
+    },
+    "windows": {
+      "autoColorManagement": false,
+      "sdrColorProfile": null,
+      "hdrColorProfile": "Xiaomi G Pro 27i HDR DisplayCal.icm"
     }
   }
 ]
 ```
+
+`device` can be a single number/string or an array interpreted as "any of". Numbers match the active device index.
+Strings first try the monitor hardware id, such as `XMI27B2`, then the readable monitor name, such as `Mi Monitor`.
+
+`mode` can be `"hdr"`, `"sdr"`, or an array interpreted as "any of".
+
+Windows profile values can be omitted to do nothing, set to `null` to clear the current-user association for that
+display mode, or set to an `.icm`/`.icc` path. Bare profile names are loaded from the bundled `profiles/` folder.
 
 ### Xiaomi G Pro 27i Users
 This project also includes a default Xiaomi G Pro 27i HDR EOTF curve correction (because this is what motivated me to 

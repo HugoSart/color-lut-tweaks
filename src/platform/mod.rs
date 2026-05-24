@@ -13,6 +13,9 @@ pub use unsupported::UnsupportedDisplayPlatform as SystemDisplayPlatform;
 pub trait DisplayPlatform {
     fn active_device_count(&self) -> Result<usize>;
     fn device_name(&self, device_index: usize) -> Result<String>;
+    fn device_hardware_id(&self, device_index: usize) -> Result<String> {
+        self.device_name(device_index)
+    }
     fn device_label(&self, device_index: usize) -> Result<String> {
         self.device_name(device_index)
     }
@@ -43,6 +46,12 @@ mod unsupported {
         }
 
         fn device_name(&self, _device_index: usize) -> Result<String> {
+            Err(Error::platform(
+                "enumerating Windows display devices is only supported on Windows",
+            ))
+        }
+
+        fn device_hardware_id(&self, _device_index: usize) -> Result<String> {
             Err(Error::platform(
                 "enumerating Windows display devices is only supported on Windows",
             ))

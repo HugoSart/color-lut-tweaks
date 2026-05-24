@@ -12,8 +12,9 @@ mod windows_tray {
     use std::thread::{self, JoinHandle};
     use std::time::Duration;
 
-    use crate::app::{self, RuntimeOptions, TweakOptions};
+    use crate::app::{self, RuntimeOptions, TweakModeFilter, TweakOptions};
     use crate::error::{Error, Result};
+    use crate::logging;
     use crate::platform::{DisplayPlatform, SystemDisplayPlatform};
     use crate::updates::{self, UpdateCheck};
 
@@ -50,6 +51,7 @@ mod windows_tray {
     const IDI_APPLICATION: usize = 32512;
     const LR_LOADFROMFILE: u32 = 0x00000010;
     const LR_DEFAULTSIZE: u32 = 0x00000040;
+    const SW_HIDE: i32 = 0;
     const SW_SHOWNORMAL: i32 = 1;
 
     const TRAY_UID: u32 = 1;
@@ -61,13 +63,23 @@ mod windows_tray {
     const MENU_STARTUP: usize = 1006;
     const MENU_QUIT: usize = 1007;
     const MENU_UPDATE: usize = 1008;
+    const MENU_IGNORE_SDR: usize = 1009;
+    const MENU_IGNORE_HDR: usize = 1010;
+    const MENU_IGNORE_WINDOWS: usize = 1011;
+    const MENU_HELP_NOT_WORKING: usize = 1012;
+    const MENU_HELP_REPORT_ISSUE: usize = 1013;
+    const MENU_HELP_FEATURE_REQUEST: usize = 1014;
     const MENU_PRESET_BASE: usize = 2000;
     const INSTANCE_MUTEX_NAME: &str = "Local\\ColorLutTweaksTray";
     const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
     const UPDATE_CHECK_WAIT_SLICE: Duration = Duration::from_secs(1);
+    const HELP_NOT_WORKING_URL: &str = "https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#why-is-the-app-not-working-or-dont-i-see-any-color-difference";
+    const HELP_REPORT_ISSUE_URL: &str = "https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#how-do-i-report-an-issue";
+    const HELP_FEATURE_REQUEST_URL: &str = "https://github.com/HugoSart/color-lut-tweaks/blob/main/docs/user-guide.md#how-do-i-suggest-a-new-feature";
 
     pub fn launch(config: Option<PathBuf>) -> Result<()> {
         if instance_running() {
+            logging::info("tray launch skipped because an instance is already running");
             return Ok(());
         }
 
@@ -87,18 +99,21 @@ mod windows_tray {
             .spawn()
             .map_err(|source| Error::Io { path: None, source })?;
 
+        logging::info("started detached tray worker");
         Ok(())
     }
 
     pub fn run(config: Option<PathBuf>) -> Result<()> {
+        logging::info("tray worker starting");
         let Some(_instance) = SingleInstance::acquire()? else {
+            logging::info("tray worker exiting because another instance is already running");
             return Ok(());
         };
 
         let settings_path = default_settings_path()?;
         let mut settings = TraySettings::load(&settings_path)?;
         settings.preset = resolve_existing_preset(&settings.preset)?;
-        settings.start_with_windows = crate::startup::enabled().unwrap_or(false);
+        settings.start_with_windows = startup_enabled_or_log();
         settings.save(&settings_path)?;
         let config = config.unwrap_or_else(|| preset_config_path(&settings.preset));
 
@@ -119,9 +134,11 @@ mod windows_tray {
             }
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
             add_tray_icon(hwnd)?;
+            logging::info("tray worker started");
             message_loop()?;
         }
 
+        logging::info("tray worker stopped");
         Ok(())
     }
 
@@ -150,38 +167,43 @@ mod windows_tray {
 
     #[derive(Clone, Debug)]
     enum CachedUpdateStatus {
-        Checking,
         Latest,
-        Available { version: String, url: String },
+        Available,
         Failed,
     }
 
     impl UpdateWorker {
         fn start(hwnd: Hwnd) -> Self {
             let shutdown = Arc::new(AtomicBool::new(false));
-            let status = Arc::new(Mutex::new(CachedUpdateStatus::Checking));
+            let status = Arc::new(Mutex::new(CachedUpdateStatus::Latest));
             let thread_shutdown = shutdown.clone();
             let thread_status = status.clone();
             let hwnd_value = hwnd as isize;
             let handle = thread::spawn(move || {
                 loop {
-                    if let Ok(mut status) = thread_status.lock() {
-                        *status = CachedUpdateStatus::Checking;
-                    }
-
                     let next_status = match updates::check_latest() {
                         Ok(UpdateCheck::Latest) => CachedUpdateStatus::Latest,
-                        Ok(UpdateCheck::Available { version, url }) => {
-                            CachedUpdateStatus::Available { version, url }
+                        Ok(UpdateCheck::Available) => CachedUpdateStatus::Available,
+                        Err(err) => {
+                            logging::warn(format!("update check failed: {err}"));
+                            CachedUpdateStatus::Failed
                         }
-                        Err(_) => CachedUpdateStatus::Failed,
                     };
+                    let should_check_again = !matches!(next_status, CachedUpdateStatus::Available);
 
-                    if let Ok(mut status) = thread_status.lock() {
-                        *status = next_status;
+                    match thread_status.lock() {
+                        Ok(mut status) => *status = next_status,
+                        Err(_) => logging::error("update worker status mutex is poisoned"),
                     }
                     unsafe {
-                        PostMessageW(hwnd_value as Hwnd, WM_UPDATE_CHECKED, 0, 0);
+                        if PostMessageW(hwnd_value as Hwnd, WM_UPDATE_CHECKED, 0, 0) == 0 {
+                            logging::warn("failed to notify tray window after update check");
+                        }
+                    }
+
+                    if !should_check_again {
+                        logging::info("update available; stopping update checks for this session");
+                        break;
                     }
 
                     if !wait_for_next_update_check(&thread_shutdown) {
@@ -201,13 +223,18 @@ mod windows_tray {
             self.status
                 .lock()
                 .map(|status| status.clone())
-                .unwrap_or(CachedUpdateStatus::Failed)
+                .unwrap_or_else(|_| {
+                    logging::error("update worker status mutex is poisoned");
+                    CachedUpdateStatus::Failed
+                })
         }
 
         fn stop(&mut self) {
             self.shutdown.store(true, Ordering::Relaxed);
-            if let Some(handle) = self.handle.take() {
-                let _ = handle.join();
+            if let Some(handle) = self.handle.take()
+                && handle.join().is_err()
+            {
+                logging::error("update worker thread panicked");
             }
         }
     }
@@ -227,7 +254,13 @@ mod windows_tray {
 
     impl TrayState {
         fn start_worker(&mut self, hwnd: Hwnd) -> Result<()> {
-            let tweaks = TweakOptions::list_from_config_file(&self.config)?;
+            let tweaks = self.runtime_tweaks()?;
+            logging::info(format!(
+                "starting color runtime from {} with {} tweak(s); force={}",
+                self.config.display(),
+                tweaks.len(),
+                self.force
+            ));
             let shutdown = Arc::new(AtomicBool::new(false));
             let (tx, rx) = mpsc::channel();
             let hwnd_value = hwnd as isize;
@@ -239,9 +272,18 @@ mod windows_tray {
                     app::run_tweaks_until(&platform, &tweaks, RuntimeOptions { force }, || {
                         thread_shutdown.load(Ordering::Relaxed)
                     });
-                let _ = tx.send(result);
+                if let Err(err) = &result {
+                    logging::error(format!("color runtime stopped with error: {err}"));
+                } else {
+                    logging::info("color runtime stopped");
+                }
+                if tx.send(result).is_err() {
+                    logging::warn("color runtime result could not be sent to tray window");
+                }
                 unsafe {
-                    PostMessageW(hwnd_value as Hwnd, WM_WORKER_DONE, 0, 0);
+                    if PostMessageW(hwnd_value as Hwnd, WM_WORKER_DONE, 0, 0) == 0 {
+                        logging::warn("failed to notify tray window after color runtime stopped");
+                    }
                 }
             });
 
@@ -254,19 +296,30 @@ mod windows_tray {
             Ok(())
         }
 
+        fn runtime_tweaks(&self) -> Result<Vec<TweakOptions>> {
+            let tweaks = TweakOptions::list_from_config_file(&self.config)?;
+            Ok(self.settings.tweak_mode_filter().apply_to(&tweaks))
+        }
+
         fn stop_worker(&mut self) -> Result<()> {
             let Some(mut worker) = self.worker.take() else {
                 return Ok(());
             };
 
             worker.shutdown.store(true, Ordering::Relaxed);
-            if let Some(handle) = worker.handle.take() {
-                let _ = handle.join();
+            if let Some(handle) = worker.handle.take()
+                && handle.join().is_err()
+            {
+                logging::error("color runtime thread panicked");
             }
 
             match worker.result.try_recv() {
                 Ok(result) => result,
-                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => Ok(()),
+                Err(mpsc::TryRecvError::Empty) => Ok(()),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    logging::warn("color runtime stopped without sending a result");
+                    Ok(())
+                }
             }
         }
 
@@ -274,9 +327,11 @@ mod windows_tray {
             if self.enabled {
                 self.stop_worker()?;
                 self.enabled = false;
+                logging::info("color adjustments disabled");
             } else {
                 self.start_worker(hwnd)?;
                 self.enabled = true;
+                logging::info("color adjustments enabled");
             }
 
             self.settings.enabled = self.enabled;
@@ -286,10 +341,11 @@ mod windows_tray {
 
         fn toggle_force(&mut self, hwnd: Hwnd) -> Result<()> {
             self.force = !self.force;
+            logging::info(format!("force mode set to {}", self.force));
             self.settings.force = self.force;
             self.save_settings()?;
             if self.enabled {
-                self.reload(hwnd)?;
+                self.reload_runtime(hwnd)?;
             }
 
             Ok(())
@@ -299,14 +355,45 @@ mod windows_tray {
             if crate::startup::enabled()? {
                 crate::startup::disable()?;
                 self.startup_enabled = false;
+                logging::info("start with Windows disabled");
             } else {
                 crate::startup::enable()?;
                 self.startup_enabled = true;
+                logging::info("start with Windows enabled");
             }
 
             self.settings.start_with_windows = self.startup_enabled;
             self.save_settings()?;
             Ok(())
+        }
+
+        fn toggle_ignore_sdr(&mut self, hwnd: Hwnd) -> Result<()> {
+            self.settings.ignore_sdr_adjustments = !self.settings.ignore_sdr_adjustments;
+            logging::info(format!(
+                "ignore SDR adjustments set to {}",
+                self.settings.ignore_sdr_adjustments
+            ));
+            self.save_settings()?;
+            self.reload_runtime(hwnd)
+        }
+
+        fn toggle_ignore_hdr(&mut self, hwnd: Hwnd) -> Result<()> {
+            self.settings.ignore_hdr_adjustments = !self.settings.ignore_hdr_adjustments;
+            logging::info(format!(
+                "ignore HDR adjustments set to {}",
+                self.settings.ignore_hdr_adjustments
+            ));
+            self.save_settings()?;
+            self.reload_runtime(hwnd)
+        }
+
+        fn toggle_ignore_windows(&mut self) -> Result<()> {
+            self.settings.ignore_windows_adjustments = !self.settings.ignore_windows_adjustments;
+            logging::info(format!(
+                "ignore Windows adjustments set to {}",
+                self.settings.ignore_windows_adjustments
+            ));
+            self.save_settings()
         }
 
         fn select_preset(&mut self, hwnd: Hwnd, preset: String) -> Result<()> {
@@ -316,22 +403,49 @@ mod windows_tray {
 
             self.settings.preset = preset;
             self.config = preset_config_path(&self.settings.preset);
+            logging::info(format!("selected preset {}", self.settings.preset));
             self.save_settings()?;
-            self.reload(hwnd)
+            self.apply_recommended_color_settings()?;
+            self.reload_runtime(hwnd)
         }
 
         fn reload(&mut self, hwnd: Hwnd) -> Result<()> {
+            self.apply_recommended_color_settings()?;
+            self.reload_runtime(hwnd)
+        }
+
+        fn reload_runtime(&mut self, hwnd: Hwnd) -> Result<()> {
             self.stop_worker()?;
             if self.enabled
                 && let Err(err) = self.start_worker(hwnd)
             {
                 self.enabled = false;
                 self.settings.enabled = false;
-                let _ = self.save_settings();
+                if let Err(save_err) = self.save_settings() {
+                    logging::error(format!(
+                        "failed to persist disabled state after runtime start failure: {save_err}"
+                    ));
+                }
                 return Err(err);
             }
 
             Ok(())
+        }
+
+        fn apply_recommended_color_settings(&self) -> Result<()> {
+            if !self.should_apply_recommended_color_settings() {
+                logging::info(format!(
+                    "skipping recommended Windows settings for {} because Ignore Windows adjustments is enabled",
+                    self.config.display()
+                ));
+                return Ok(());
+            }
+
+            apply_recommended_color_settings(&self.config)
+        }
+
+        fn should_apply_recommended_color_settings(&self) -> bool {
+            !self.settings.ignore_windows_adjustments
         }
 
         fn save_settings(&self) -> Result<()> {
@@ -354,8 +468,10 @@ mod windows_tray {
                 )),
             };
 
-            if let Some(handle) = worker.handle.take() {
-                let _ = handle.join();
+            if let Some(handle) = worker.handle.take()
+                && handle.join().is_err()
+            {
+                logging::error("color runtime thread panicked");
             }
             self.enabled = false;
             result
@@ -365,15 +481,11 @@ mod windows_tray {
             self.update_worker
                 .as_ref()
                 .map(UpdateWorker::status)
-                .unwrap_or(CachedUpdateStatus::Failed)
+                .unwrap_or(CachedUpdateStatus::Latest)
         }
 
-        fn update_url(&self) -> Option<String> {
-            match self.update_status() {
-                CachedUpdateStatus::Available { url, .. } => Some(url),
-                CachedUpdateStatus::Latest => Some(updates::RELEASES_PAGE_URL.to_string()),
-                _ => None,
-            }
+        fn update_url(&self) -> String {
+            updates::RELEASES_PAGE_URL.to_string()
         }
     }
 
@@ -483,51 +595,92 @@ mod windows_tray {
             return;
         }
 
+        let app_header = wide(format!("Color LUT Tweaks v{}", env!("CARGO_PKG_VERSION")));
         let devices_header = wide("Devices");
-        let help_header = wide("HELP: Is this tool not working for you?");
-        let help_auto_color = wide("Disable Windows \"Auto Color Management\"");
-        let help_nvidia_reference = wide("Disable NVIDIA \"Override to reference mode\"");
         let open_explorer = wide("Open In Explorer");
         let edit_config_label = wide("Edit");
         let color_header = wide("Color Adjustments");
-        let presets = preset_items().unwrap_or_else(|_| Vec::new());
+        let presets = preset_items().unwrap_or_else(|err| {
+            logging::warn(format!("failed to read presets: {err}"));
+            Vec::new()
+        });
         let presets_label = wide("Presets");
+        let override_label = wide("Override");
+        let ignore_sdr = wide("Ignore SDR adjustments");
+        let ignore_hdr = wide("Ignore HDR adjustments");
+        let ignore_windows = wide("Ignore Windows adjustments");
         let enabled = wide("Enabled");
         let force = wide("Force");
         let reload = wide("Reload");
-        let application_header = wide(format!("Color LUT Tweaker v{}", env!("CARGO_PKG_VERSION")));
+        let application_header = wide("Application");
         let update_status = unsafe {
             state(hwnd)
                 .map(|state| state.update_status())
-                .unwrap_or(CachedUpdateStatus::Failed)
+                .unwrap_or(CachedUpdateStatus::Latest)
         };
         let (update_label, update_flags) = update_menu_item(&update_status);
         let update_label = wide(update_label);
         let startup = wide("Start with Windows");
+        let help_label = wide("Help");
+        let help_not_working = wide("Read this if the app is not working");
+        let help_report_issue = wide("Report an issue");
+        let help_feature_request = wide("Feature request");
         let quit = wide("Quit");
-        let (enabled_flags, force_flags, startup_flags) =
-            if let Some(state) = unsafe { state(hwnd) } {
-                state.startup_enabled = crate::startup::enabled().unwrap_or(false);
-                (
-                    checked_flag(state.enabled),
-                    checked_flag(state.force),
-                    checked_flag(state.startup_enabled),
-                )
-            } else {
-                (MF_STRING, MF_STRING, MF_STRING)
-            };
+        let (
+            enabled_flags,
+            force_flags,
+            startup_flags,
+            ignore_sdr_flags,
+            ignore_hdr_flags,
+            ignore_windows_flags,
+        ) = if let Some(state) = unsafe { state(hwnd) } {
+            state.startup_enabled = startup_enabled_or_log();
+            (
+                checked_flag(state.enabled),
+                checked_flag(state.force),
+                checked_flag(state.startup_enabled),
+                checked_flag(state.settings.ignore_sdr_adjustments),
+                checked_flag(state.settings.ignore_hdr_adjustments),
+                checked_flag(state.settings.ignore_windows_adjustments),
+            )
+        } else {
+            (
+                MF_STRING, MF_STRING, MF_STRING, MF_STRING, MF_STRING, MF_STRING,
+            )
+        };
         unsafe {
+            AppendMenuW(menu, section_header_flags(), 0, app_header.as_ptr());
+            AppendMenuW(menu, update_flags, MENU_UPDATE, update_label.as_ptr());
+            let help_menu = CreatePopupMenu();
+            if !help_menu.is_null() {
+                AppendMenuW(
+                    help_menu,
+                    MF_STRING,
+                    MENU_HELP_NOT_WORKING,
+                    help_not_working.as_ptr(),
+                );
+                AppendMenuW(
+                    help_menu,
+                    MF_STRING,
+                    MENU_HELP_REPORT_ISSUE,
+                    help_report_issue.as_ptr(),
+                );
+                AppendMenuW(
+                    help_menu,
+                    MF_STRING,
+                    MENU_HELP_FEATURE_REQUEST,
+                    help_feature_request.as_ptr(),
+                );
+                AppendMenuW(
+                    menu,
+                    MF_STRING | MF_POPUP,
+                    help_menu as usize,
+                    help_label.as_ptr(),
+                );
+            }
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, devices_header.as_ptr());
             append_device_rows(menu);
-            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-            AppendMenuW(menu, section_header_flags(), 0, help_header.as_ptr());
-            AppendMenuW(menu, section_header_flags(), 0, help_auto_color.as_ptr());
-            AppendMenuW(
-                menu,
-                section_header_flags(),
-                0,
-                help_nvidia_reference.as_ptr(),
-            );
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, color_header.as_ptr());
             let presets_menu = CreatePopupMenu();
@@ -556,6 +709,33 @@ mod windows_tray {
                     presets_label.as_ptr(),
                 );
             }
+            let override_menu = CreatePopupMenu();
+            if !override_menu.is_null() {
+                AppendMenuW(
+                    override_menu,
+                    ignore_sdr_flags,
+                    MENU_IGNORE_SDR,
+                    ignore_sdr.as_ptr(),
+                );
+                AppendMenuW(
+                    override_menu,
+                    ignore_hdr_flags,
+                    MENU_IGNORE_HDR,
+                    ignore_hdr.as_ptr(),
+                );
+                AppendMenuW(
+                    override_menu,
+                    ignore_windows_flags,
+                    MENU_IGNORE_WINDOWS,
+                    ignore_windows.as_ptr(),
+                );
+                AppendMenuW(
+                    menu,
+                    MF_STRING | MF_POPUP,
+                    override_menu as usize,
+                    override_label.as_ptr(),
+                );
+            }
             AppendMenuW(
                 menu,
                 MF_STRING,
@@ -567,7 +747,6 @@ mod windows_tray {
             AppendMenuW(menu, MF_STRING, MENU_RELOAD, reload.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, section_header_flags(), 0, application_header.as_ptr());
-            AppendMenuW(menu, update_flags, MENU_UPDATE, update_label.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_OPEN_EXPLORER, open_explorer.as_ptr());
             AppendMenuW(menu, startup_flags, MENU_STARTUP, startup.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
@@ -633,6 +812,27 @@ mod windows_tray {
                     show_error(hwnd, &err.to_string());
                 }
             },
+            MENU_IGNORE_SDR => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = state.toggle_ignore_sdr(hwnd)
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
+            MENU_IGNORE_HDR => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = state.toggle_ignore_hdr(hwnd)
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
+            MENU_IGNORE_WINDOWS => unsafe {
+                if let Some(state) = state(hwnd)
+                    && let Err(err) = state.toggle_ignore_windows()
+                {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
             MENU_STARTUP => unsafe {
                 if let Some(state) = state(hwnd)
                     && let Err(err) = state.toggle_startup()
@@ -648,10 +848,25 @@ mod windows_tray {
                 }
             },
             MENU_UPDATE => unsafe {
-                if let Some(state) = state(hwnd)
-                    && let Some(url) = state.update_url()
-                    && let Err(err) = open_url(&url)
-                {
+                if let Some(state) = state(hwnd) {
+                    let url = state.update_url();
+                    if let Err(err) = open_url(&url) {
+                        show_error(hwnd, &err.to_string());
+                    }
+                }
+            },
+            MENU_HELP_NOT_WORKING => unsafe {
+                if let Err(err) = open_url(HELP_NOT_WORKING_URL) {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
+            MENU_HELP_REPORT_ISSUE => unsafe {
+                if let Err(err) = open_url(HELP_REPORT_ISSUE_URL) {
+                    show_error(hwnd, &err.to_string());
+                }
+            },
+            MENU_HELP_FEATURE_REQUEST => unsafe {
+                if let Err(err) = open_url(HELP_FEATURE_REQUEST_URL) {
                     show_error(hwnd, &err.to_string());
                 }
             },
@@ -676,13 +891,17 @@ mod windows_tray {
 
     fn update_menu_item(status: &CachedUpdateStatus) -> (String, u32) {
         match status {
-            CachedUpdateStatus::Checking => ("Checking for updates...".to_string(), MF_GRAYED),
-            CachedUpdateStatus::Latest => ("Already in latest version".to_string(), MF_STRING),
-            CachedUpdateStatus::Available { version, .. } => {
-                (format!("Update available ({version})"), MF_STRING)
-            }
-            CachedUpdateStatus::Failed => ("Unable to check updates".to_string(), MF_GRAYED),
+            CachedUpdateStatus::Latest => ("Check for updates".to_string(), MF_STRING),
+            CachedUpdateStatus::Available => ("Update available".to_string(), MF_STRING),
+            CachedUpdateStatus::Failed => ("Check for updates".to_string(), MF_STRING),
         }
+    }
+
+    fn startup_enabled_or_log() -> bool {
+        crate::startup::enabled().unwrap_or_else(|err| {
+            logging::warn(format!("failed to read start with Windows state: {err}"));
+            false
+        })
     }
 
     unsafe fn append_device_rows(menu: Hmenu) {
@@ -716,12 +935,8 @@ mod windows_tray {
         let mut rows = Vec::with_capacity(count);
         for index in 0..count {
             let name = platform.device_label(index)?;
-            let mode = if platform.hdr_enabled(index)? {
-                "HDR"
-            } else {
-                "SDR"
-            };
-            rows.push(format!("{index}: {name} ({mode})"));
+            let hardware_id = platform.device_hardware_id(index)?;
+            rows.push(format!("{index}: {name} ({hardware_id})"));
         }
 
         Ok(rows)
@@ -812,8 +1027,14 @@ mod windows_tray {
         enabled: bool,
         #[serde(default = "default_true")]
         force: bool,
-        #[serde(default)]
+        #[serde(default, rename = "startWithWindows")]
         start_with_windows: bool,
+        #[serde(default, rename = "ignoreSdrAdjustments")]
+        ignore_sdr_adjustments: bool,
+        #[serde(default, rename = "ignoreHdrAdjustments")]
+        ignore_hdr_adjustments: bool,
+        #[serde(default, rename = "ignoreWindowsAdjustments")]
+        ignore_windows_adjustments: bool,
     }
 
     impl Default for TraySettings {
@@ -823,11 +1044,21 @@ mod windows_tray {
                 enabled: true,
                 force: true,
                 start_with_windows: false,
+                ignore_sdr_adjustments: false,
+                ignore_hdr_adjustments: false,
+                ignore_windows_adjustments: false,
             }
         }
     }
 
     impl TraySettings {
+        fn tweak_mode_filter(&self) -> TweakModeFilter {
+            TweakModeFilter {
+                ignore_sdr_adjustments: self.ignore_sdr_adjustments,
+                ignore_hdr_adjustments: self.ignore_hdr_adjustments,
+            }
+        }
+
         fn load(path: &std::path::Path) -> Result<Self> {
             if !path.is_file() {
                 return Ok(Self::default());
@@ -859,6 +1090,81 @@ mod windows_tray {
 
     fn default_true() -> bool {
         true
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn tray_settings_default_new_override_fields_to_false() {
+            let settings: TraySettings = serde_json::from_str(
+                r#"{
+                    "preset": "default",
+                    "enabled": true,
+                    "force": true,
+                    "startWithWindows": false
+                }"#,
+            )
+            .unwrap();
+
+            assert!(!settings.ignore_sdr_adjustments);
+            assert!(!settings.ignore_hdr_adjustments);
+            assert!(!settings.ignore_windows_adjustments);
+        }
+
+        #[test]
+        fn tray_settings_read_new_override_fields() {
+            let settings: TraySettings = serde_json::from_str(
+                r#"{
+                    "ignoreSdrAdjustments": true,
+                    "ignoreHdrAdjustments": true,
+                    "ignoreWindowsAdjustments": true
+                }"#,
+            )
+            .unwrap();
+
+            assert!(settings.ignore_sdr_adjustments);
+            assert!(settings.ignore_hdr_adjustments);
+            assert!(settings.ignore_windows_adjustments);
+        }
+
+        #[test]
+        fn tray_settings_ignore_legacy_automatic_apply_field() {
+            let json = serde_json::to_string(&TraySettings {
+                preset: "default".to_string(),
+                enabled: true,
+                force: true,
+                start_with_windows: false,
+                ignore_sdr_adjustments: false,
+                ignore_hdr_adjustments: false,
+                ignore_windows_adjustments: false,
+            })
+            .unwrap();
+
+            assert!(!json.contains("automaticallyApplyColorSettings"));
+            assert!(json.contains("startWithWindows"));
+            assert!(!json.contains("start_with_windows"));
+        }
+
+        #[test]
+        fn ignore_windows_adjustments_skips_recommended_windows_settings() {
+            let state = TrayState {
+                enabled: false,
+                force: false,
+                startup_enabled: false,
+                worker: None,
+                update_worker: None,
+                config: PathBuf::from("config.json"),
+                settings_path: PathBuf::from("settings.json"),
+                settings: TraySettings {
+                    ignore_windows_adjustments: true,
+                    ..Default::default()
+                },
+            };
+
+            assert!(!state.should_apply_recommended_color_settings());
+        }
     }
 
     fn open_in_explorer() -> Result<()> {
@@ -893,17 +1199,66 @@ mod windows_tray {
         open_shell_target(url)
     }
 
+    fn apply_recommended_color_settings(config: &std::path::Path) -> Result<()> {
+        match crate::windows_settings::apply_current_user_from_config_file(config)? {
+            crate::windows_settings::WindowsSettingsApply::NotConfigured => {}
+            crate::windows_settings::WindowsSettingsApply::AlreadyApplied => {
+                logging::info(format!(
+                    "current-user Windows color profile settings already applied for {}",
+                    config.display()
+                ));
+            }
+            crate::windows_settings::WindowsSettingsApply::Applied => {
+                logging::info(format!(
+                    "applied current-user Windows color profile settings from {}",
+                    config.display()
+                ));
+            }
+        }
+
+        if !crate::windows_settings::needs_elevated_apply(config)? {
+            logging::info(format!(
+                "recommended Windows settings already applied for {}",
+                config.display()
+            ));
+            return Ok(());
+        }
+
+        logging::info(format!(
+            "requesting elevation to apply recommended Windows settings from {}",
+            config.display()
+        ));
+        let exe = std::env::current_exe().map_err(|source| Error::Io { path: None, source })?;
+        let parameters = format!(
+            "apply-auto-color-management-settings --config {}",
+            quote_shell_arg(&config.to_string_lossy())
+        );
+        shell_execute("runas", &exe.to_string_lossy(), Some(&parameters), SW_HIDE)
+    }
+
     fn open_shell_target(target: &str) -> Result<()> {
-        let operation = wide("open");
+        shell_execute("open", target, None, SW_SHOWNORMAL)
+    }
+
+    fn shell_execute(
+        operation: &str,
+        target: &str,
+        parameters: Option<&str>,
+        show_command: i32,
+    ) -> Result<()> {
+        let operation = wide(operation);
         let target = wide(target);
+        let parameters = parameters.map(wide);
         let result = unsafe {
             ShellExecuteW(
                 ptr::null_mut(),
                 operation.as_ptr(),
                 target.as_ptr(),
+                parameters
+                    .as_ref()
+                    .map_or(ptr::null(), |parameters| parameters.as_ptr()),
                 ptr::null(),
-                ptr::null(),
-                SW_SHOWNORMAL,
+                show_command,
             )
         } as isize;
 
@@ -914,6 +1269,10 @@ mod windows_tray {
         }
 
         Ok(())
+    }
+
+    fn quote_shell_arg(value: &str) -> String {
+        format!("\"{}\"", value.replace('"', "\\\""))
     }
 
     unsafe fn handle_worker_done(hwnd: Hwnd) {
@@ -940,10 +1299,15 @@ mod windows_tray {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         }
         let mut state = unsafe { Box::from_raw(state_ptr) };
-        let _ = state.stop_worker();
+        if let Err(err) = state.stop_worker() {
+            logging::error(format!(
+                "failed to stop color runtime during cleanup: {err}"
+            ));
+        }
         if let Some(mut worker) = state.update_worker.take() {
             worker.stop();
         }
+        logging::info("tray cleanup finished");
     }
 
     unsafe fn add_tray_icon(hwnd: Hwnd) -> Result<()> {
@@ -1013,6 +1377,7 @@ mod windows_tray {
     }
 
     unsafe fn show_error(hwnd: Hwnd, message: &str) {
+        logging::error(message);
         let title = wide(APP_NAME);
         let message = wide(message);
         unsafe {

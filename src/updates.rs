@@ -13,7 +13,7 @@ const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UpdateCheck {
     Latest,
-    Available { version: String, url: String },
+    Available,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -38,10 +38,7 @@ pub fn check_latest() -> Result<UpdateCheck> {
         .map_err(|source| Error::platform(format!("failed to read update response: {source}")))?;
 
     if is_newer_version(&release.tag_name, env!("CARGO_PKG_VERSION")) {
-        Ok(UpdateCheck::Available {
-            version: release.tag_name,
-            url: RELEASES_PAGE_URL.to_string(),
-        })
+        Ok(UpdateCheck::Available)
     } else {
         Ok(UpdateCheck::Latest)
     }

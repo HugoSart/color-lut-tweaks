@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::app::{self, AppliedTweak, ColorMode, DeviceSelector, TweakOptions};
 use crate::error::{Error, Result};
+use crate::logging;
 use crate::platform::SystemDisplayPlatform;
 
 pub enum Command {
@@ -13,6 +14,8 @@ pub enum Command {
     Start(StartOptions),
     Tray(StartOptions),
     TrayWorker(StartOptions),
+    ApplyWindowsSettings(StartOptions),
+    ApplyAutoColorManagementSettings(StartOptions),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -61,7 +64,7 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
     match command {
         Command::LaunchTray => {
             crate::tray::launch(None)?;
-            println!("Started color-lut-tweaks tray");
+            print_info("Started color-lut-tweaks tray");
         }
         Command::Inspect(options) => {
             let tweaks = options.resolve()?;
@@ -72,11 +75,13 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             let tweaks = options.resolve_many()?;
             let report = app::apply_tweak_list(&platform, &tweaks)?;
             if report.is_empty() {
-                println!("No tweaks configured; nothing to apply");
+                print_info("No tweaks configured; nothing to apply");
             } else {
                 for applied in report.applied {
                     match applied {
-                        AppliedTweak::Lut(path) => println!("Applied gamma ramp from {path}"),
+                        AppliedTweak::Lut(path) => {
+                            print_info(format!("Applied gamma ramp from {path}"))
+                        }
                     }
                 }
             }
@@ -85,9 +90,12 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             let tweaks = options.resolve()?;
             app::reset_gamma(&platform, tweaks.device.as_ref())?;
             if let Some(device) = tweaks.device {
-                println!("Reset gamma ramp to identity on device {}", device.label());
+                print_info(format!(
+                    "Reset gamma ramp to identity on device {}",
+                    device.label()
+                ));
             } else {
-                println!("Reset gamma ramp to identity on all devices");
+                print_info("Reset gamma ramp to identity on all devices");
             }
         }
         Command::Watch(options) => {
@@ -95,14 +103,17 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
             match tweaks.as_slice() {
                 [tweak] => {
                     if let Some(path) = &tweak.lut {
-                        println!("Watching HDR state for {}", path.display());
+                        print_info(format!("Watching HDR state for {}", path.display()));
                     } else {
-                        println!("Watching HDR state with no LUT configured");
+                        print_info("Watching HDR state with no LUT configured");
                     }
                     app::watch_tweaks(&platform, tweak)?;
                 }
                 _ => {
-                    println!("Watching HDR state from {} configured tweaks", tweaks.len());
+                    print_info(format!(
+                        "Watching HDR state from {} configured tweaks",
+                        tweaks.len()
+                    ));
                     app::start_tweaks(&platform, &tweaks)?;
                 }
             }
@@ -110,7 +121,7 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
         Command::Start(options) => {
             let config = options.config.unwrap_or(app::default_config_path()?);
             let tweaks = TweakOptions::list_from_config_file(&config)?;
-            println!("Starting from {}", config.display());
+            print_info(format!("Starting from {}", config.display()));
             app::start_tweaks(&platform, &tweaks)?;
         }
         Command::Tray(options) => {
@@ -119,9 +130,44 @@ pub fn run(args: impl IntoIterator<Item = String>) -> Result<()> {
         Command::TrayWorker(options) => {
             crate::tray::run(options.config)?;
         }
+        Command::ApplyWindowsSettings(options) => {
+            let config = options.config.unwrap_or(app::default_config_path()?);
+            match crate::windows_settings::apply_from_config_file(&config)? {
+                crate::windows_settings::WindowsSettingsApply::NotConfigured => {
+                    print_info("No recommended Windows settings configured")
+                }
+                crate::windows_settings::WindowsSettingsApply::AlreadyApplied => {
+                    print_info("Recommended Windows settings already applied")
+                }
+                crate::windows_settings::WindowsSettingsApply::Applied => {
+                    print_info("Applied recommended Windows settings")
+                }
+            }
+        }
+        Command::ApplyAutoColorManagementSettings(options) => {
+            let config = options.config.unwrap_or(app::default_config_path()?);
+            let tweaks = TweakOptions::list_from_config_file(&config)?;
+            match crate::windows_settings::apply_auto_color_management_from_tweaks(&tweaks)? {
+                crate::windows_settings::WindowsSettingsApply::NotConfigured => {
+                    print_info("No Windows auto color management setting configured")
+                }
+                crate::windows_settings::WindowsSettingsApply::AlreadyApplied => {
+                    print_info("Windows auto color management already applied")
+                }
+                crate::windows_settings::WindowsSettingsApply::Applied => {
+                    print_info("Applied Windows auto color management")
+                }
+            }
+        }
     }
 
     Ok(())
+}
+
+fn print_info(message: impl std::fmt::Display) {
+    let message = message.to_string();
+    logging::info(&message);
+    println!("{message}");
 }
 
 pub fn parse_command(args: &[String]) -> Result<Command> {
@@ -144,6 +190,14 @@ pub fn parse_command(args: &[String]) -> Result<Command> {
         [command, rest @ ..] if command == "tray-worker" => Ok(Command::TrayWorker(
             parse_start_options("tray-worker", rest)?,
         )),
+        [command, rest @ ..] if command == "apply-windows-settings" => Ok(
+            Command::ApplyWindowsSettings(parse_start_options("apply-windows-settings", rest)?),
+        ),
+        [command, rest @ ..] if command == "apply-auto-color-management-settings" => {
+            Ok(Command::ApplyAutoColorManagementSettings(
+                parse_start_options("apply-auto-color-management-settings", rest)?,
+            ))
+        }
         [first, ..] if first.starts_with('-') => Ok(Command::Watch(parse_options(args)?)),
         _ => Err(Error::InvalidArguments(expected_usage())),
     }
@@ -170,6 +224,7 @@ pub fn print_usage() {
     );
     eprintln!("  color-lut-tweaks start [--config <configs/Default.config.json>]");
     eprintln!("  color-lut-tweaks tray [--config <configs/Default.config.json>]");
+    eprintln!("  color-lut-tweaks apply-windows-settings [--config <configs/Default.config.json>]");
     eprintln!("  color-lut-tweaks");
 }
 

@@ -1,0 +1,19 @@
+[
+  {
+    "device": 0,
+    "mode": "sdr",
+    "lut": "Xiaomi G Pro 27i SDR (D65 Gamma22) (chimolog)",
+    "windows": {
+      "autoColorManagement": false,
+      "sdrColorProfile": null
+    }
+  },
+  {
+    "device": 0,
+    "mode": "hdr",
+    "lut": "Xiaomi G Pro 27i HDR (D65 PQ) (chimolog)",
+    "windows": {
+      "hdrColorProfile": "Xiaomi G Pro 27i - DisplayCal (ColorControl, 1200PB) (HDR)"
+    }
+  }
+]

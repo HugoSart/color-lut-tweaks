@@ -224,6 +224,26 @@ fn tray_worker_parses_config_argument() {
 }
 
 #[test]
+fn apply_windows_settings_parses_config_argument() {
+    let args = vec![
+        "apply-windows-settings".to_string(),
+        "--config=tests/fixtures/config-windows.json".to_string(),
+    ];
+
+    let Ok(CliCommand::ApplyWindowsSettings(StartOptions {
+        config: Some(config),
+    })) = cli::parse_command(&args)
+    else {
+        panic!("expected apply-windows-settings command with config path");
+    };
+
+    assert_eq!(
+        config,
+        std::path::PathBuf::from("tests/fixtures/config-windows.json")
+    );
+}
+
+#[test]
 fn identity_lut_parses_as_reserved_lut_value() {
     let args = vec![
         "apply".to_string(),
