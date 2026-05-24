@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/HugoSart/color-lut-tweaks/compare/v0.2.1...v0.3.0) (2026-05-24)
+
+
+### Features
+
+* Color profiles, auto color management and overrides suport. ([#8](https://github.com/HugoSart/color-lut-tweaks/issues/8)) ([d256a7e](https://github.com/HugoSart/color-lut-tweaks/commit/d256a7e1d1c0e7605078ae6aa57c56c01af0f601))
+
 ## [0.2.1](https://github.com/HugoSart/color-lut-tweaks/compare/v0.2.0...v0.2.1) (2026-05-22)
 
 
