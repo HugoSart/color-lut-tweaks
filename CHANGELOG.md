@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/HugoSart/color-lut-tweaks/compare/v0.3.0...v0.3.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* change Xiaomi profile peak brightness to 1200 ([#10](https://github.com/HugoSart/color-lut-tweaks/issues/10)) ([048aeae](https://github.com/HugoSart/color-lut-tweaks/commit/048aeae769607a69c71e109447281dc70d513feb))
+
 ## [0.3.0](https://github.com/HugoSart/color-lut-tweaks/compare/v0.2.1...v0.3.0) (2026-05-24)
 
 
