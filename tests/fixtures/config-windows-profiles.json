@@ -1,0 +1,14 @@
+[
+  {
+    "windows": {
+      "sdrColorProfile": null,
+      "hdrColorProfile": "profile-a.icm"
+    }
+  },
+  {
+    "windows": {
+      "hdrColorProfile": "Bundled Profile"
+    }
+  },
+  {}
+]

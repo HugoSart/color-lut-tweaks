@@ -1,0 +1,7 @@
+[
+  {
+    "device": [0, "XMI27B2"],
+    "mode": ["hdr", "sdr"],
+    "lut": "identity"
+  }
+]
