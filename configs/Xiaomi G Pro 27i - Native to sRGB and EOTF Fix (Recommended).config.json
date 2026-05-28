@@ -13,7 +13,7 @@
     "mode": "hdr",
     "lut": "Xiaomi G Pro 27i HDR (D65 PQ) (Linear RGB) (chimolog)",
     "windows": {
-      "hdrColorProfile": "Xiaomi G Pro 27i - DisplayCal (ColorControl, 1200PB) (HDR)"
+      "hdrColorProfile": "Xiaomi G Pro 27i - Windows Calibration (1200PB) (HDR)"
     }
   }
 ]
